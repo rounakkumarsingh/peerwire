@@ -5,10 +5,15 @@ const MINUS = "-".charCodeAt(0);
 const LOWERCASE_I = "i".charCodeAt(0);
 const LOWERCASE_E = "e".charCodeAt(0);
 const LOWERCASE_L = "l".charCodeAt(0);
+const LOWERCASE_D = "d".charCodeAt(0);
 
 const MAX_STRING_LENGTH = 25 * 1024 * 1024;
 
-type BencodeValue = Uint8Array | bigint | BencodeValue[];
+type BencodeValue =
+	| Uint8Array
+	| bigint
+	| BencodeValue[]
+	| Map<Uint8Array, BencodeValue>;
 
 function parseNumber(input: Uint8Array, offset: number, end?: number): bigint {
 	let num = BigInt(0);
@@ -43,7 +48,7 @@ export function decodeBencodedString(
 	offset: number,
 ): { value: Uint8Array; nextOffset: number } {
 	const colonPosition = input.indexOf(COLON, offset);
-	if (colonPosition <= 0) {
+	if (colonPosition <= offset) {
 		throw new Error("Expected colon in Bencoded string");
 	}
 
@@ -87,7 +92,7 @@ export function decodeBencodedInteger(
 	if (input.at(offset) !== LOWERCASE_I) {
 		throw new Error("expected 'i'");
 	}
-	const numberEnd = input.indexOf(LOWERCASE_E);
+	const numberEnd = input.indexOf(LOWERCASE_E, offset);
 	if (numberEnd <= offset + 1) {
 		// handles case where e is not available or just ie
 		throw new Error(
@@ -132,6 +137,43 @@ export function decodeBencodedList(
 	};
 }
 
+export function decodeBencodedDictionary(
+	input: Uint8Array,
+	offset: number,
+): { value: Map<Uint8Array, BencodeValue>; nextOffset: number } {
+	if (input[offset] !== LOWERCASE_D) {
+		throw new Error("Not a dictionary item. Expected 'd'");
+	}
+	let currOffset = offset + 1;
+	const dict = new Map<Uint8Array, BencodeValue>();
+	let lastKey: Uint8Array | null = null;
+	while (currOffset < input.length && input[currOffset] !== LOWERCASE_E) {
+		// Parse key (must be a string in bencode)
+		const { value: key, nextOffset: afterKeyOffset } = decodeBencodedString(
+			input,
+			currOffset,
+		);
+		currOffset = afterKeyOffset;
+		const { value, nextOffset: afterValueOffset } = decodeBencodedItem(
+			input,
+			currOffset,
+		);
+		currOffset = afterValueOffset;
+		if (lastKey !== null && compareBytes(lastKey, key) >= 0) {
+			throw new Error("keys must be sorted");
+		}
+		dict.set(key, value);
+		lastKey = key;
+	}
+	if (currOffset >= input.length) {
+		throw new Error("Dictionary not closed. Expected 'e'");
+	}
+	return {
+		value: dict,
+		nextOffset: currOffset + 1, // skip 'e'
+	};
+}
+
 export function decodeBencodedItem(
 	input: Uint8Array,
 	offset: number,
@@ -149,6 +191,9 @@ export function decodeBencodedItem(
 		case LOWERCASE_L:
 			return decodeBencodedList(input, offset);
 
+		case LOWERCASE_D:
+			return decodeBencodedDictionary(input, offset);
+
 		default:
 			if (byte >= ZERO && byte <= NINE) {
 				return decodeBencodedString(input, offset);
@@ -158,4 +203,16 @@ export function decodeBencodedItem(
 				`Invalid bencoded item at offset ${offset}: 0x${byte.toString(16)}`,
 			);
 	}
+}
+
+function compareBytes(a: Uint8Array, b: Uint8Array): number {
+	const minLen = Math.min(a.length, b.length);
+
+	for (let i = 0; i < minLen; i++) {
+		if (a[i] !== b[i]) {
+			return a[i]! - b[i]!; // negative if a < b
+		}
+	}
+
+	return a.length - b.length;
 }
