@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { decodeBencodedString } from "./decode";
+import { decodeBencodedInteger, decodeBencodedString } from "./decode";
+
+const toUint8Array = (str: string) => new TextEncoder().encode(str);
 
 describe("bencoded strings", () => {
-	const toUint8Array = (str: string) => new TextEncoder().encode(str);
-
 	test("valid string", () => {
 		const input = toUint8Array("4:test");
 		const result = decodeBencodedString(input, 0);
@@ -101,5 +101,113 @@ describe("bencoded strings", () => {
 		const result = decodeBencodedString(input, 0);
 		expect(result.value).toEqual(new Uint8Array([0, 255, 1, 2]));
 		expect(result.nextOffset).toBe(6);
+	});
+});
+
+describe("bencoded integers", () => {
+	test("valid integer", () => {
+		const input = toUint8Array("i42e");
+		const result = decodeBencodedInteger(input, 0);
+		expect(result.value).toBe(42n);
+		expect(result.nextOffset).toBe(4);
+	});
+	test("valid negative", () => {
+		const input = toUint8Array("i-42e");
+		const result = decodeBencodedInteger(input, 0);
+		expect(result.value).toBe(-42n);
+		expect(result.nextOffset).toBe(5);
+	});
+	test("valid zero", () => {
+		const input = toUint8Array("i0e");
+		const result = decodeBencodedInteger(input, 0);
+		expect(result.value).toBe(0n);
+		expect(result.nextOffset).toBe(3);
+	});
+	test("invalid zero(minus sign)", () => {
+		const input = toUint8Array("i-0e");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+	test("leading zeros (positive)", () => {
+		const input = toUint8Array("i069e");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+	test("leading zeros (negative)", () => {
+		const input = toUint8Array("i-069e");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+	test("leading zeros (zeors)", () => {
+		const input = toUint8Array("i000e");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+	test("missing i", () => {
+		const input = toUint8Array("69e");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+	test("missing e", () => {
+		const input = toUint8Array("i69");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+	test("missing i & e", () => {
+		const input = toUint8Array("69");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+	test("missing i and negative", () => {
+		const input = toUint8Array("-69e");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+	test("missing e and negative", () => {
+		const input = toUint8Array("i-69");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+	test("missing i & e and negative", () => {
+		const input = toUint8Array("-69");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+	test("missing i and zero", () => {
+		const input = toUint8Array("0e");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+	test("missing e and zero", () => {
+		const input = toUint8Array("i0");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+	test("missing i & e and zero", () => {
+		const input = toUint8Array("0");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+	test("invalid string", () => {
+		const input = toUint8Array("i01b06e");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+
+	test("extra data after valid integer is not consumed", () => {
+		const input = toUint8Array("i42ejunk");
+		const result = decodeBencodedInteger(input, 0);
+		expect(result.value).toBe(42n);
+		expect(result.nextOffset).toBe(4);
+	});
+
+	test("parsing from non-zero offset works", () => {
+		const input = toUint8Array("xxi42e");
+		const result = decodeBencodedInteger(input, 2);
+		expect(result.value).toBe(42n);
+		expect(result.nextOffset).toBe(6);
+	});
+
+	test("empty integer throws", () => {
+		const input = toUint8Array("ie");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+
+	test("only negative sign throws", () => {
+		const input = toUint8Array("i-e");
+		expect(() => decodeBencodedInteger(input, 0)).toThrow();
+	});
+
+	test("very large integer", () => {
+		const input = toUint8Array("i9999999999999999999e");
+		const result = decodeBencodedInteger(input, 0);
+		expect(result.value).toBe(9999999999999999999n);
+		expect(result.nextOffset).toBe(21);
 	});
 });
