@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { decodeBencodedInteger, decodeBencodedString } from "./decode";
+import {
+	decodeBencodedInteger,
+	decodeBencodedList,
+	decodeBencodedString,
+} from "./decode";
 
 const toUint8Array = (str: string) => new TextEncoder().encode(str);
 
@@ -209,5 +213,69 @@ describe("bencoded integers", () => {
 		const result = decodeBencodedInteger(input, 0);
 		expect(result.value).toBe(9999999999999999999n);
 		expect(result.nextOffset).toBe(21);
+	});
+});
+
+describe("test lists", () => {
+	test("valid list", () => {
+		const input = toUint8Array("l4:spami42ee");
+		const result = decodeBencodedList(input, 0);
+		expect(result.value).toEqual([toUint8Array("spam"), 42n]);
+		expect(result.nextOffset).toEqual(12);
+	});
+	test("valid long list", () => {
+		const input = toUint8Array("l4:spami42e4:teste");
+		const result = decodeBencodedList(input, 0);
+		expect(result.value).toEqual([
+			toUint8Array("spam"),
+			42n,
+			toUint8Array("test"),
+		]);
+		expect(result.nextOffset).toEqual(18);
+	});
+	test("valid nested list", () => {
+		const input = toUint8Array("ll4:spamee");
+		const result = decodeBencodedList(input, 0);
+		expect(result.value).toEqual([[toUint8Array("spam")]]);
+		expect(result.nextOffset).toEqual(10);
+	});
+	test("empty array", () => {
+		const input = toUint8Array("le");
+		const result = decodeBencodedList(input, 0);
+		expect(result.value).toEqual([]);
+		expect(result.nextOffset).toEqual(2);
+	});
+	test("missing e", () => {
+		const input = toUint8Array("l4:spam4:egg");
+		expect(() => decodeBencodedList(input, 0)).toThrow();
+	});
+	test("EOF during item decoding", () => {
+		const input = toUint8Array("l4:spami42");
+		expect(() => decodeBencodedList(input, 0)).toThrow();
+	});
+	test("deep recursion test", () => {
+		const input = toUint8Array(
+			"llllllllllllllllllllllllllllllllleeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+		);
+		expect(decodeBencodedList(input, 0).value).toBeArray();
+	});
+
+	test("extra data after valid list is not consumed", () => {
+		const input = toUint8Array("l4:spamejunk");
+		const result = decodeBencodedList(input, 0);
+		expect(result.value).toEqual([toUint8Array("spam")]);
+		expect(result.nextOffset).toEqual(8);
+	});
+
+	test("parsing from non-zero offset works", () => {
+		const input = toUint8Array("xxl4:spame");
+		const result = decodeBencodedList(input, 2);
+		expect(result.value).toEqual([toUint8Array("spam")]);
+		expect(result.nextOffset).toEqual(10);
+	});
+
+	test("missing l throws", () => {
+		const input = toUint8Array("4:spame");
+		expect(() => decodeBencodedList(input, 0)).toThrow();
 	});
 });

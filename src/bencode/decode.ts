@@ -4,8 +4,11 @@ const NINE = "9".charCodeAt(0);
 const MINUS = "-".charCodeAt(0);
 const LOWERCASE_I = "i".charCodeAt(0);
 const LOWERCASE_E = "e".charCodeAt(0);
+const LOWERCASE_L = "l".charCodeAt(0);
 
 const MAX_STRING_LENGTH = 25 * 1024 * 1024;
+
+type BencodeValue = Uint8Array | bigint | BencodeValue[];
 
 function parseNumber(input: Uint8Array, offset: number, end?: number): bigint {
 	let num = BigInt(0);
@@ -104,4 +107,55 @@ export function decodeBencodedInteger(
 		value: number,
 		nextOffset: numberEnd + 1,
 	};
+}
+
+export function decodeBencodedList(
+	input: Uint8Array,
+	offset: number,
+): { value: BencodeValue[]; nextOffset: number } {
+	if (input.at(offset) !== LOWERCASE_L) {
+		throw new Error("Not a list item. Expected 'l'");
+	}
+	let currOffset = offset + 1;
+	const arr: BencodeValue[] = [];
+	while (currOffset < input.length && input.at(currOffset) !== LOWERCASE_E) {
+		const { value, nextOffset } = decodeBencodedItem(input, currOffset);
+		arr.push(value);
+		currOffset = nextOffset;
+	}
+	if (currOffset >= input.length) {
+		throw new Error("list not closed. Expected 'e'");
+	}
+	return {
+		value: arr,
+		nextOffset: currOffset + 1,
+	};
+}
+
+export function decodeBencodedItem(
+	input: Uint8Array,
+	offset: number,
+): { value: BencodeValue; nextOffset: number } {
+	const byte = input[offset];
+
+	if (byte === undefined) {
+		throw new Error(`Unexpected end of input at offset ${offset}`);
+	}
+
+	switch (byte) {
+		case LOWERCASE_I:
+			return decodeBencodedInteger(input, offset);
+
+		case LOWERCASE_L:
+			return decodeBencodedList(input, offset);
+
+		default:
+			if (byte >= ZERO && byte <= NINE) {
+				return decodeBencodedString(input, offset);
+			}
+
+			throw new Error(
+				`Invalid bencoded item at offset ${offset}: 0x${byte.toString(16)}`,
+			);
+	}
 }
