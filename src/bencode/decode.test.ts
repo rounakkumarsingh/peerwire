@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { toUint8Array } from "../utils/toUint8Array";
 import {
 	decodeBencodedDictionary,
 	decodeBencodedInteger,
@@ -11,8 +12,6 @@ type BencodeValue =
 	| bigint
 	| BencodeValue[]
 	| Map<Uint8Array, BencodeValue>;
-
-const toUint8Array = (str: string) => new TextEncoder().encode(str);
 
 describe("bencoded strings", () => {
 	test("valid string", () => {
