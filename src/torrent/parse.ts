@@ -1,6 +1,6 @@
 import type { Encoding } from "bun";
 import {
-	type BencodeValue,
+	type BencodeDecodedValue,
 	decodeBencodedDictionary,
 	decodeBencodedItem,
 	decodeBencodedString,
@@ -16,16 +16,18 @@ import type {
 	UnixTimestamp,
 } from "./metadata";
 
-type TypeGuard<T extends BencodeValue> = (value: BencodeValue) => value is T;
+type TypeGuard<T extends BencodeDecodedValue> = (
+	value: BencodeDecodedValue,
+) => value is T;
 
-function expectKey<T extends BencodeValue>(
-	dict: Map<Uint8Array, BencodeValue>,
+function expectKey<T extends BencodeDecodedValue>(
+	dict: Map<Uint8Array, BencodeDecodedValue>,
 	key: string,
 	guard: TypeGuard<T>,
 ): T {
 	const keyBytes = typeof key === "string" ? toUint8Array(key) : key;
 
-	let value: BencodeValue | undefined;
+	let value: BencodeDecodedValue | undefined;
 	for (const [k, v] of dict) {
 		if (k.length === keyBytes.length) {
 			let equal = true;
@@ -59,14 +61,14 @@ function expectKey<T extends BencodeValue>(
 	return value;
 }
 
-function optKey<T extends BencodeValue>(
-	dict: Map<Uint8Array, BencodeValue>,
+function optKey<T extends BencodeDecodedValue>(
+	dict: Map<Uint8Array, BencodeDecodedValue>,
 	key: string,
 	guard: TypeGuard<T>,
 ): T | undefined {
 	const keyBytes = typeof key === "string" ? toUint8Array(key) : key;
 
-	let value: BencodeValue | undefined;
+	let value: BencodeDecodedValue | undefined;
 	for (const [k, v] of dict) {
 		if (k.length === keyBytes.length) {
 			let equal = true;
@@ -99,12 +101,14 @@ function optKey<T extends BencodeValue>(
 	return value;
 }
 
-const isUint8Array = (v: BencodeValue): v is Uint8Array =>
+const isUint8Array = (v: BencodeDecodedValue): v is Uint8Array =>
 	v instanceof Uint8Array;
-const isBigInt = (v: BencodeValue): v is bigint => typeof v === "bigint";
-const isMap = (v: BencodeValue): v is Map<Uint8Array, BencodeValue> =>
-	v instanceof Map;
-const isArray = (v: BencodeValue): v is BencodeValue[] => Array.isArray(v);
+const isBigInt = (v: BencodeDecodedValue): v is bigint => typeof v === "bigint";
+const isMap = (
+	v: BencodeDecodedValue,
+): v is Map<Uint8Array, BencodeDecodedValue> => v instanceof Map;
+const isArray = (v: BencodeDecodedValue): v is BencodeDecodedValue[] =>
+	Array.isArray(v);
 
 function decodeText(bytes: Uint8Array, encoding: Encoding = "utf-8") {
 	return new TextDecoder(encoding, { fatal: true }).decode(bytes);

@@ -9,11 +9,11 @@ const LOWERCASE_D = "d".charCodeAt(0);
 
 const MAX_STRING_LENGTH = 25 * 1024 * 1024;
 
-export type BencodeValue =
+export type BencodeDecodedValue =
 	| Uint8Array
 	| bigint
-	| BencodeValue[]
-	| Map<Uint8Array, BencodeValue>;
+	| BencodeDecodedValue[]
+	| Map<Uint8Array, BencodeDecodedValue>;
 
 function parseNumber(input: Uint8Array, offset: number, end?: number): bigint {
 	let num = BigInt(0);
@@ -117,12 +117,12 @@ export function decodeBencodedInteger(
 export function decodeBencodedList(
 	input: Uint8Array,
 	offset: number,
-): { value: BencodeValue[]; nextOffset: number } {
+): { value: BencodeDecodedValue[]; nextOffset: number } {
 	if (input.at(offset) !== LOWERCASE_L) {
 		throw new Error("Not a list item. Expected 'l'");
 	}
 	let currOffset = offset + 1;
-	const arr: BencodeValue[] = [];
+	const arr: BencodeDecodedValue[] = [];
 	while (currOffset < input.length && input.at(currOffset) !== LOWERCASE_E) {
 		const { value, nextOffset } = decodeBencodedItem(input, currOffset);
 		arr.push(value);
@@ -140,12 +140,12 @@ export function decodeBencodedList(
 export function decodeBencodedDictionary(
 	input: Uint8Array,
 	offset: number,
-): { value: Map<Uint8Array, BencodeValue>; nextOffset: number } {
+): { value: Map<Uint8Array, BencodeDecodedValue>; nextOffset: number } {
 	if (input[offset] !== LOWERCASE_D) {
 		throw new Error("Not a dictionary item. Expected 'd'");
 	}
 	let currOffset = offset + 1;
-	const dict = new Map<Uint8Array, BencodeValue>();
+	const dict = new Map<Uint8Array, BencodeDecodedValue>();
 	let lastKey: Uint8Array | null = null;
 	while (currOffset < input.length && input[currOffset] !== LOWERCASE_E) {
 		// Parse key (must be a string in bencode)
@@ -177,7 +177,7 @@ export function decodeBencodedDictionary(
 export function decodeBencodedItem(
 	input: Uint8Array,
 	offset: number,
-): { value: BencodeValue; nextOffset: number } {
+): { value: BencodeDecodedValue; nextOffset: number } {
 	const byte = input[offset];
 
 	if (byte === undefined) {
