@@ -11,6 +11,9 @@
 		"typescript": "^5"
 	},
 	"scripts": {
-		"test": "bun test"
+		"test": "bun test",
+		"biome:lint": "bunx --bun @biomejs/biome lint",
+		"biome:format": "bunx --bun @biomejs/biome format",
+		"biome:check": "bunx --bun @biomejs/biome check"
 	}
 }
