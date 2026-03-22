@@ -239,7 +239,7 @@ describe("encodeItem", () => {
 	});
 
 	test("throws for unsupported type", () => {
-		expect(() => encodeItem(42n)).toThrow();
+		expect(() => encodeItem(42)).toThrow();
 	});
 });
 
