@@ -1,10 +1,11 @@
+import { dns } from "bun";
 import {
 	type BencodeDecodedValue,
 	decodeBencodedItem,
 } from "../bencode/decode";
 import type { SHA1Hash } from "../torrent/metadata";
-import { toUint8Array } from "../utils/toUint8Array";
 import {
+	createPeerId,
 	type Hostname,
 	type IPAddr,
 	isHostname,
@@ -15,12 +16,7 @@ import {
 	type TrackerPeer,
 	type TrackerResponse,
 } from "./types";
-import {
-	createPeerId,
-	encodePeerId,
-	generatePeerId,
-	percentEncodeBytes,
-} from "./utils";
+import { encodePeerId, generatePeerId, percentEncodeBytes } from "./utils";
 
 export class ClientTracker {
 	readonly peerId: PeerId;
@@ -48,7 +44,7 @@ export class ClientTracker {
 		noPeerId?: boolean;
 		numwant?: number;
 		key?: string;
-	}): Promise<TrackerResponse> {
+	}) {
 		const {
 			trackerURL,
 			infoHash,
@@ -65,6 +61,7 @@ export class ClientTracker {
 		} = params;
 
 		const url = new URL(trackerURL);
+		dns.prefetch(trackerURL.host);
 		url.searchParams.set("info_hash", percentEncodeBytes(infoHash));
 		url.searchParams.set("peer_id", encodePeerId(this.peerId));
 		url.searchParams.set("port", String(port));
@@ -95,7 +92,11 @@ export class ClientTracker {
 			url.searchParams.set("trackerid", this._trackerId);
 		}
 
-		const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+		const response = await fetch(url, {
+			signal: AbortSignal.timeout(30_000),
+			verbose: true,
+		});
+
 		if (!response.ok) {
 			throw new Error(
 				`Tracker request failed: ${response.status} ${response.statusText}`,
@@ -127,7 +128,7 @@ export class ClientTracker {
 		const minInterval = this.#optInteger(value, "min interval");
 		const complete = this.#optInteger(value, "complete");
 		const incomplete = this.#optInteger(value, "incomplete");
-		const peersRaw = value.get(toUint8Array("peers"));
+		const peersRaw = this.#get(value, "peers");
 
 		if (failure !== undefined) {
 			throw new Error(`Tracker failure: ${failure}`);
@@ -232,7 +233,16 @@ export class ClientTracker {
 		dict: Map<Uint8Array, BencodeDecodedValue>,
 		key: string,
 	): BencodeDecodedValue | undefined {
-		return dict.get(new TextEncoder().encode(key));
+		const keyBytes = new TextEncoder().encode(key);
+		for (const [k, v] of dict) {
+			if (
+				k.length === keyBytes.length &&
+				k.every((b, i) => b === keyBytes[i])
+			) {
+				return v;
+			}
+		}
+		return undefined;
 	}
 
 	#expectInteger(
