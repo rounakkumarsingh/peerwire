@@ -18,6 +18,18 @@ const HANDSHAKE_TOTAL_LEN =
 
 const BT_PROTOCOL_STRING = "BitTorrent protocol";
 
+// Shared decoder for handshake protocol string parsing
+const textDecoder = new TextDecoder();
+
+// Debug logging utility - enabled only in development mode
+const isDevelopment =
+	Bun.env.NODE_ENV === "development" || process.env.NODE_ENV === "development";
+const debug = (...args: unknown[]) => {
+	if (isDevelopment) {
+		console.log(...args);
+	}
+};
+
 // Ring buffer for accumulating TCP stream data until complete messages arrive
 class ReadBuffer {
 	private buffer = new Uint8Array(64 * 1024); // 64 KiB
@@ -94,7 +106,7 @@ export class PeerWireCommunication {
 	readonly torrentMetadata: TorrentMetadata;
 	public socket: Bun.Socket<PeerWireSocketData>;
 
-	private readBuffer: ReadBuffer;
+	private readBuffer: ReadBuffer = new ReadBuffer();
 
 	private constructor(
 		peer: TrackerPeer,
@@ -122,17 +134,93 @@ export class PeerWireCommunication {
 	}
 
 	private createHandshakeHandler() {
+		const processHandshake = (instance: PeerWireCommunication) => {
+			if (instance.readBuffer.length() < HANDSHAKE_TOTAL_LEN) {
+				throw new Error(
+					`Not enough data for handshake: ${instance.readBuffer.length()} bytes available, but ${HANDSHAKE_TOTAL_LEN} required`,
+				);
+			}
+
+			const handshake = instance.readBuffer.drain(HANDSHAKE_TOTAL_LEN);
+			const protocolLen = handshake[0];
+
+			if (protocolLen !== HANDSHAKE_PROTOCOL_LEN) {
+				throw new Error(
+					`Invalid protocol length: ${protocolLen}, expected: ${HANDSHAKE_PROTOCOL_LEN}`,
+				);
+			}
+
+			const protocolStr = textDecoder.decode(
+				handshake.subarray(1, 1 + protocolLen),
+			);
+
+			if (protocolStr !== BT_PROTOCOL_STRING) {
+				throw new Error(
+					`Invalid protocol string: "${protocolStr}", expected: "${BT_PROTOCOL_STRING}"`,
+				);
+			}
+
+			const reserved = handshake.subarray(
+				1 + protocolLen,
+				1 + protocolLen + HANDSHAKE_RESERVED_LEN,
+			);
+			const receivedInfoHash = handshake.subarray(
+				1 + protocolLen + HANDSHAKE_RESERVED_LEN,
+				1 + protocolLen + HANDSHAKE_RESERVED_LEN + HANDSHAKE_INFOHASH_LEN,
+			);
+			const receivedPeerId = handshake.subarray(
+				1 + protocolLen + HANDSHAKE_RESERVED_LEN + HANDSHAKE_INFOHASH_LEN,
+				1 +
+					protocolLen +
+					HANDSHAKE_RESERVED_LEN +
+					HANDSHAKE_INFOHASH_LEN +
+					HANDSHAKE_PEERID_LEN,
+			);
+
+			if (
+				!receivedInfoHash.every(
+					(byte, index) => byte === instance.infoHash[index],
+				)
+			) {
+				throw new Error(
+					"Info hash mismatch - peer doesn't have the same torrent",
+				);
+			}
+
+			debug(
+				`[Handshake Handler] Handshake successful from peer ${Buffer.from(receivedPeerId).toString("hex")}`,
+			);
+			debug(
+				`[Handshake Handler] Reserved bytes: ${Buffer.from(reserved).toString("hex")}`,
+			);
+		};
+
 		return {
 			data(socket: Bun.Socket<PeerWireSocketData>, data: Uint8Array) {
-				// TODO: Implement handshake validation logic
-				// 1. Append data to buffer
-				// 2. Check if we have enough bytes for handshake (HANDSHAKE_TOTAL_LEN)
-				// 3. Validate protocol length, protocol string, and info hash
-				// 4. If valid, transition to bitfield handler
-				console.log("[Handshake Handler] Received data, length:", data.length);
+				const instance = socket.data.peerWire;
+				if (instance === undefined) {
+					throw new Error(
+						"PeerWireCommunication instance not found in socket data",
+					);
+				}
 
-				// Transition to bitfield handler when handshake complete
-				// socket.reload(self.createBitfieldHandler());
+				try {
+					instance.readBuffer.append(data);
+					debug("[Handshake Handler] Received data, length:", data.length);
+					if (instance.readBuffer.length() < HANDSHAKE_TOTAL_LEN) {
+						return; // Wait for more data to arrive
+					}
+					processHandshake(instance);
+					// TODO: Send proper bitfield message with length prefix and message ID (5)
+					// Format: [4-byte length prefix][1-byte ID (5)][bitfield payload]
+					socket.reload({ socket: instance.createBitfieldHandler() });
+				} catch (error) {
+					console.error(
+						"[Handshake Handler] Handshake failed:",
+						error instanceof Error ? error.message : error,
+					);
+					socket.end();
+				}
 			},
 		};
 	}
@@ -140,16 +228,22 @@ export class PeerWireCommunication {
 	private createBitfieldHandler() {
 		return {
 			data(socket: Bun.Socket<PeerWireSocketData>, data: Uint8Array) {
+				const instance = socket.data.peerWire;
+				if (instance === undefined) {
+					throw new Error(
+						"PeerWireCommunication instance not found in socket data",
+					);
+				}
 				// TODO: Implement bitfield handling logic
 				// 1. Append data to buffer
 				// 2. Parse bitfield message (length prefix + message ID + bitfield payload)
 				// 3. Store peer's bitfield
 				// 4. Send our bitfield
 				// 5. Transition to message handler
-				console.log("[Bitfield Handler] Received data, length:", data.length);
+				debug("[Bitfield Handler] Received data, length:", data.length);
 
 				// Transition to message handler when bitfield exchange complete
-				// socket.reload(self.createMessageHandler());
+				socket.reload({ socket: instance.createMessageHandler() });
 			},
 		};
 	}
@@ -157,6 +251,12 @@ export class PeerWireCommunication {
 	private createMessageHandler() {
 		return {
 			data(socket: Bun.Socket<PeerWireSocketData>, data: Uint8Array) {
+				const instance = socket.data.peerWire;
+				if (instance === undefined) {
+					throw new Error(
+						"PeerWireCommunication instance not found in socket data",
+					);
+				}
 				// TODO: Implement message handling logic
 				// 1. Append data to buffer
 				// 2. Parse message length prefix
@@ -170,7 +270,7 @@ export class PeerWireCommunication {
 				//    - 6: request
 				//    - 7: piece
 				//    - 8: cancel
-				console.log("[Message Handler] Received data, length:", data.length);
+				debug("[Message Handler] Received data, length:", data.length);
 			},
 		};
 	}
@@ -181,14 +281,6 @@ export class PeerWireCommunication {
 		peerId: SHA1Hash,
 		torrentMetadata: TorrentMetadata,
 	): Promise<PeerWireCommunication> {
-		const obj = new PeerWireCommunication(
-			peer,
-			infoHash,
-			peerId,
-			null as unknown as Bun.Socket<PeerWireSocketData>,
-			torrentMetadata,
-		);
-
 		const socket = await Bun.connect<PeerWireSocketData>({
 			hostname: peer.host,
 			port: peer.port,
@@ -196,17 +288,30 @@ export class PeerWireCommunication {
 				binaryType: "uint8array",
 				open: (socket) => {
 					socket.write(PeerWireCommunication.buildHandshake(infoHash, peerId));
-					console.log(
-						`Handshake Initiated with peer ${peer.host}:${peer.port}`,
-					);
+					debug(`Handshake Initiated with peer ${peer.host}:${peer.port}`);
 				},
-				...obj.createHandshakeHandler(),
+				data: (socket, data) => {
+					const instance = socket.data.peerWire;
+					if (instance === undefined) {
+						throw new Error(
+							"PeerWireCommunication instance not found in socket data",
+						);
+					}
+					// This initial handler will only process the handshake response. Once the handshake is complete, it will transition to the bitfield handler, and then to the message handler.
+					instance.createHandshakeHandler().data(socket, data);
+				},
 			},
 		});
 
-		obj.socket = socket;
-		socket.data = { peerWire: obj };
-		return obj;
+		const instance = new PeerWireCommunication(
+			peer,
+			infoHash,
+			peerId,
+			socket,
+			torrentMetadata,
+		);
+		instance.socket.data = { peerWire: instance };
+		return instance;
 	}
 
 	handshakePacket(): Buffer {
