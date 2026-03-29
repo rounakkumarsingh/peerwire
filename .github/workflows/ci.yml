@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "**"
+  pull_request:
 
 jobs:
   test:
@@ -18,8 +19,16 @@ jobs:
   biome:
     name: Biome CI
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install
-      - run: bunx --bun @biomejs/biome ci
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Biome
+        uses: biomejs/setup-biome@v2
+        with:
+          version: latest
+      - name: Run Biome
+        run: biome ci .
