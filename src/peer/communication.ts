@@ -22,10 +22,12 @@ const BT_PROTOCOL_STRING = "BitTorrent protocol";
 const textDecoder = new TextDecoder();
 
 // Debug logging utility - enabled only in development mode
-const isDevelopment =
-	Bun.env.NODE_ENV === "development" || process.env.NODE_ENV === "development";
+
 const debug = (...args: unknown[]) => {
-	if (isDevelopment) {
+	if (
+		Bun.env.NODE_ENV === "development" ||
+		process.env.NODE_ENV === "development"
+	) {
 		console.log(...args);
 	}
 };
@@ -104,6 +106,12 @@ export class PeerWireCommunication {
 	readonly infoHash: SHA1Hash;
 	readonly peerId: SHA1Hash;
 	readonly torrentMetadata: TorrentMetadata;
+	readonly state = {
+		amChoked: true,
+		amInterested: false,
+		peerChoked: true,
+		peerInterested: false,
+	};
 	public socket: Bun.Socket<PeerWireSocketData>;
 
 	private readBuffer: ReadBuffer = new ReadBuffer();
@@ -236,7 +244,9 @@ export class PeerWireCommunication {
 				}
 				// TODO: Implement bitfield handling logic
 				// 1. Append data to buffer
+				instance.readBuffer.append(data);
 				// 2. Parse bitfield message (length prefix + message ID + bitfield payload)
+
 				// 3. Store peer's bitfield
 				// 4. Send our bitfield
 				// 5. Transition to message handler
