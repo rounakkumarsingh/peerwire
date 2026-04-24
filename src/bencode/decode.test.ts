@@ -227,11 +227,7 @@ describe("test lists", () => {
 	test("valid long list", () => {
 		const input = toUint8Array("l4:spami42e4:teste");
 		const result = decodeBencodedList(input, 0);
-		expect(result.value).toEqual([
-			toUint8Array("spam"),
-			42n,
-			toUint8Array("test"),
-		]);
+		expect(result.value).toEqual([toUint8Array("spam"), 42n, toUint8Array("test")]);
 		expect(result.nextOffset).toEqual(18);
 	});
 	test("valid nested list", () => {
@@ -282,9 +278,7 @@ describe("test lists", () => {
 });
 
 describe("bencoded dictionary", () => {
-	const toMap = (
-		obj: Record<string, unknown>,
-	): Map<Uint8Array, BencodeDecodedValue> => {
+	const toMap = (obj: Record<string, unknown>): Map<Uint8Array, BencodeDecodedValue> => {
 		const map = new Map<Uint8Array, BencodeDecodedValue>();
 		for (const [key, value] of Object.entries(obj)) {
 			map.set(new TextEncoder().encode(key), value as BencodeDecodedValue);
@@ -323,9 +317,7 @@ describe("bencoded dictionary", () => {
 	test("valid dictionary with list value", () => {
 		const input = toUint8Array("d4:namel3:tom4:jerree");
 		const result = decodeBencodedDictionary(input, 0);
-		expect(result.value).toEqual(
-			toMap({ name: [toUint8Array("tom"), toUint8Array("jerr")] }),
-		);
+		expect(result.value).toEqual(toMap({ name: [toUint8Array("tom"), toUint8Array("jerr")] }));
 		expect(result.nextOffset).toEqual(21);
 	});
 
@@ -477,9 +469,7 @@ describe("bencoded dictionary", () => {
 	test("multiple key-value pairs d3:bar4:spam3:fooi42ee", () => {
 		const input = toUint8Array("d3:bar4:spam3:fooi42ee");
 		const result = decodeBencodedDictionary(input, 0);
-		expect(result.value).toEqual(
-			toMap({ bar: toUint8Array("spam"), foo: 42n }),
-		);
+		expect(result.value).toEqual(toMap({ bar: toUint8Array("spam"), foo: 42n }));
 	});
 
 	test("dictionary inside list ld3:key5:valueee", () => {
@@ -489,9 +479,7 @@ describe("bencoded dictionary", () => {
 	});
 
 	test("binary key is preserved", () => {
-		const input = new Uint8Array([
-			100, 50, 58, 255, 0, 53, 58, 118, 97, 108, 117, 101, 101,
-		]);
+		const input = new Uint8Array([100, 50, 58, 255, 0, 53, 58, 118, 97, 108, 117, 101, 101]);
 		const result = decodeBencodedDictionary(input, 0);
 		const keys = Array.from(result.value.keys());
 		expect(keys[0]).toEqual(new Uint8Array([255, 0]));
@@ -499,9 +487,7 @@ describe("bencoded dictionary", () => {
 
 	test("binary value is preserved", () => {
 		// d3:key4:\x00\xff\x01\x02e
-		const input = new Uint8Array([
-			100, 51, 58, 107, 101, 121, 52, 58, 0, 255, 1, 2, 101,
-		]);
+		const input = new Uint8Array([100, 51, 58, 107, 101, 121, 52, 58, 0, 255, 1, 2, 101]);
 		const result = decodeBencodedDictionary(input, 0);
 		const values = Array.from(result.value.values());
 		expect(values[0]).toEqual(new Uint8Array([0, 255, 1, 2]));

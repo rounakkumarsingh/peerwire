@@ -35,8 +35,7 @@ export interface TorrentMetadataFileEntry {
 	path: readonly string[]; // an array of dirs and a file name at last. eg, dir1/dir2/file -> ['dir1', 'dir2', 'file']
 }
 
-export interface TorrentMetadataMultipleFilesInfo
-	extends TorrentMetadataFileInfo {
+export interface TorrentMetadataMultipleFilesInfo extends TorrentMetadataFileInfo {
 	name: string; // name of the directory
 	files: TorrentMetadataFileEntry[]; // one for each file
 }

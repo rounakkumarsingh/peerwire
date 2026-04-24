@@ -1,8 +1,5 @@
 import { PeerWireCommunication } from "./peer/communication";
-import type {
-	SHA1Hash,
-	TorrentMetadataSingleFileInfo,
-} from "./torrent/metadata";
+import type { SHA1Hash, TorrentMetadataSingleFileInfo } from "./torrent/metadata";
 import { parseTorrentFile } from "./torrent/parse";
 import { ClientTracker } from "./tracker/tracker";
 import { generatePeerId } from "./tracker/utils";
@@ -40,20 +37,14 @@ const connections = await Promise.allSettled(
 			console.log(`[${peer.host}:${peer.port}] Connected successfully`);
 			return conn;
 		} catch (err) {
-			console.log(
-				`[${peer.host}:${peer.port}] Connection failed:`,
-				(err as Error).message,
-			);
+			console.log(`[${peer.host}:${peer.port}] Connection failed:`, (err as Error).message);
 			throw err;
 		}
 	}),
 );
 
 const successfulConnections = connections
-	.filter(
-		(r): r is PromiseFulfilledResult<PeerWireCommunication> =>
-			r.status === "fulfilled",
-	)
+	.filter((r): r is PromiseFulfilledResult<PeerWireCommunication> => r.status === "fulfilled")
 	.map((r) => r.value);
 
 console.log(

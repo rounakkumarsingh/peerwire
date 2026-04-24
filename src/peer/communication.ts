@@ -24,10 +24,7 @@ const textDecoder = new TextDecoder();
 // Debug logging utility - enabled only in development mode
 
 const debug = (...args: unknown[]) => {
-	if (
-		Bun.env.NODE_ENV === "development" ||
-		process.env.NODE_ENV === "development"
-	) {
+	if (Bun.env.NODE_ENV === "development" || process.env.NODE_ENV === "development") {
 		console.log(...args);
 	}
 };
@@ -44,9 +41,7 @@ class ReadBuffer {
 		const capacity = this.buffer.length;
 
 		if (chunkLen > capacity - this.size) {
-			throw new Error(
-				"Ring buffer overflow: chunk too large for remaining space",
-			);
+			throw new Error("Ring buffer overflow: chunk too large for remaining space");
 		}
 
 		// Copy chunk into ring buffer, handling wrap-around
@@ -55,10 +50,7 @@ class ReadBuffer {
 			const spaceToEnd = capacity - this.tail;
 			const toWrite = Math.min(chunkLen - bytesWritten, spaceToEnd);
 
-			this.buffer.set(
-				chunk.subarray(bytesWritten, bytesWritten + toWrite),
-				this.tail,
-			);
+			this.buffer.set(chunk.subarray(bytesWritten, bytesWritten + toWrite), this.tail);
 
 			this.tail = (this.tail + toWrite) % capacity;
 			bytesWritten += toWrite;
@@ -74,9 +66,7 @@ class ReadBuffer {
 	// Get and remove the first n bytes
 	drain(n: number): Uint8Array {
 		if (n > this.size) {
-			console.error(
-				`Attempt to drain ${n} bytes, but only ${this.size} available`,
-			);
+			console.error(`Attempt to drain ${n} bytes, but only ${this.size} available`);
 			throw new Error("Not enough data in buffer to drain");
 		}
 		const result = new Uint8Array(n);
@@ -87,10 +77,7 @@ class ReadBuffer {
 			const bytesToEnd = capacity - this.head;
 			const toRead = Math.min(n - bytesRead, bytesToEnd);
 
-			result.set(
-				this.buffer.subarray(this.head, this.head + toRead),
-				bytesRead,
-			);
+			result.set(this.buffer.subarray(this.head, this.head + toRead), bytesRead);
 
 			this.head = (this.head + toRead) % capacity;
 			bytesRead += toRead;
@@ -158,9 +145,7 @@ export class PeerWireCommunication {
 				);
 			}
 
-			const protocolStr = textDecoder.decode(
-				handshake.subarray(1, 1 + protocolLen),
-			);
+			const protocolStr = textDecoder.decode(handshake.subarray(1, 1 + protocolLen));
 
 			if (protocolStr !== BT_PROTOCOL_STRING) {
 				throw new Error(
@@ -185,31 +170,21 @@ export class PeerWireCommunication {
 					HANDSHAKE_PEERID_LEN,
 			);
 
-			if (
-				!receivedInfoHash.every(
-					(byte, index) => byte === instance.infoHash[index],
-				)
-			) {
-				throw new Error(
-					"Info hash mismatch - peer doesn't have the same torrent",
-				);
+			if (!receivedInfoHash.every((byte, index) => byte === instance.infoHash[index])) {
+				throw new Error("Info hash mismatch - peer doesn't have the same torrent");
 			}
 
 			debug(
 				`[Handshake Handler] Handshake successful from peer ${Buffer.from(receivedPeerId).toString("hex")}`,
 			);
-			debug(
-				`[Handshake Handler] Reserved bytes: ${Buffer.from(reserved).toString("hex")}`,
-			);
+			debug(`[Handshake Handler] Reserved bytes: ${Buffer.from(reserved).toString("hex")}`);
 		};
 
 		return {
 			data(socket: Bun.Socket<PeerWireSocketData>, data: Uint8Array) {
 				const instance = socket.data.peerWire;
 				if (instance === undefined) {
-					throw new Error(
-						"PeerWireCommunication instance not found in socket data",
-					);
+					throw new Error("PeerWireCommunication instance not found in socket data");
 				}
 
 				try {
@@ -238,9 +213,7 @@ export class PeerWireCommunication {
 			data(socket: Bun.Socket<PeerWireSocketData>, data: Uint8Array) {
 				const instance = socket.data.peerWire;
 				if (instance === undefined) {
-					throw new Error(
-						"PeerWireCommunication instance not found in socket data",
-					);
+					throw new Error("PeerWireCommunication instance not found in socket data");
 				}
 				// TODO: Implement bitfield handling logic
 				// 1. Append data to buffer
@@ -263,9 +236,7 @@ export class PeerWireCommunication {
 			data(socket: Bun.Socket<PeerWireSocketData>, data: Uint8Array) {
 				const instance = socket.data.peerWire;
 				if (instance === undefined) {
-					throw new Error(
-						"PeerWireCommunication instance not found in socket data",
-					);
+					throw new Error("PeerWireCommunication instance not found in socket data");
 				}
 				// TODO: Implement message handling logic
 				// 1. Append data to buffer
@@ -303,9 +274,7 @@ export class PeerWireCommunication {
 				data: (socket, data) => {
 					const instance = socket.data.peerWire;
 					if (instance === undefined) {
-						throw new Error(
-							"PeerWireCommunication instance not found in socket data",
-						);
+						throw new Error("PeerWireCommunication instance not found in socket data");
 					}
 					// This initial handler will only process the handshake response. Once the handshake is complete, it will transition to the bitfield handler, and then to the message handler.
 					instance.createHandshakeHandler().data(socket, data);
@@ -313,13 +282,7 @@ export class PeerWireCommunication {
 			},
 		});
 
-		const instance = new PeerWireCommunication(
-			peer,
-			infoHash,
-			peerId,
-			socket,
-			torrentMetadata,
-		);
+		const instance = new PeerWireCommunication(peer, infoHash, peerId, socket, torrentMetadata);
 		instance.socket.data = { peerWire: instance };
 		return instance;
 	}

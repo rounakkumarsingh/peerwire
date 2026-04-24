@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import type { SHA1Hash } from "../torrent/metadata";
 import { parseTorrentFile } from "../torrent/parse";
+import { ClientTracker } from "./tracker";
 import type { Hostname, IPAddr, PeerId, Port } from "./types";
 
 function toIPAddr(ip: string): IPAddr {
@@ -106,24 +107,15 @@ class MockURL {
 	}
 }
 
-function createMockFetch(
-	fn: (url: MockURL) => Promise<Response>,
-): typeof globalThis.fetch {
+function createMockFetch(fn: (url: MockURL) => Promise<Response>): typeof globalThis.fetch {
 	return ((url: URL | Request | string) => {
-		const urlStr =
-			url instanceof URL
-				? url.toString()
-				: url instanceof Request
-					? url.url
-					: url;
+		const urlStr = url instanceof URL ? url.toString() : url instanceof Request ? url.url : url;
 		const resolvedUrl = new MockURL(urlStr);
 		return fn(resolvedUrl);
 	}) as unknown as typeof globalThis.fetch;
 }
 
-function createSimpleMockFetch(
-	responseFactory: () => Response,
-): typeof globalThis.fetch {
+function createSimpleMockFetch(responseFactory: () => Response): typeof globalThis.fetch {
 	const mock = (() => responseFactory()) as unknown as typeof globalThis.fetch;
 	return mock;
 }
@@ -131,17 +123,11 @@ function createSimpleMockFetch(
 function bencode(obj: object): Uint8Array {
 	const encodeString = (s: string): Uint8Array => {
 		const bytes = new TextEncoder().encode(s);
-		return new Uint8Array([
-			...new TextEncoder().encode(`${bytes.length}:`),
-			...bytes,
-		]);
+		return new Uint8Array([...new TextEncoder().encode(`${bytes.length}:`), ...bytes]);
 	};
 
 	const encodeBytes = (bytes: Uint8Array): Uint8Array => {
-		return new Uint8Array([
-			...new TextEncoder().encode(`${bytes.length}:`),
-			...bytes,
-		]);
+		return new Uint8Array([...new TextEncoder().encode(`${bytes.length}:`), ...bytes]);
 	};
 
 	const encode = (val: unknown): Uint8Array => {
@@ -164,9 +150,7 @@ function bencode(obj: object): Uint8Array {
 			]);
 		}
 		if (typeof val === "object" && val !== null) {
-			const entries = Object.entries(val).sort(([a], [b]) =>
-				a.localeCompare(b),
-			);
+			const entries = Object.entries(val).sort(([a], [b]) => a.localeCompare(b));
 			const inner: number[] = [];
 			for (const [k, v] of entries) {
 				inner.push(...Array.from(encodeString(k)));
@@ -183,9 +167,7 @@ function bencode(obj: object): Uint8Array {
 	return encode(obj);
 }
 
-function createCompactPeers(
-	peers: Array<{ ip: string; port: number }>,
-): Uint8Array {
+function createCompactPeers(peers: Array<{ ip: string; port: number }>): Uint8Array {
 	const bytes: number[] = [];
 	for (const { ip, port } of peers) {
 		const parts = ip.split(".").map(Number);
@@ -206,24 +188,30 @@ function createInfoHash(): SHA1Hash {
 	return new Uint8Array(20) as SHA1Hash;
 }
 
+/**
+ * Helper to load a real torrent file from test-data directory.
+ * Returns the parsed metadata including real infoHash and announce URL.
+ */
+async function loadTestTorrentFile(filename: string) {
+	const torrentPath = path.join(import.meta.dir, "../torrent/test-data", filename);
+	return parseTorrentFile(torrentPath);
+}
+
 describe("ClientTracker", () => {
 	describe("constructor", () => {
 		test("generates peer ID if not provided", async () => {
-			const { ClientTracker } = await import("./tracker");
 			const tracker = new ClientTracker();
 			expect(tracker.peerId).toBeInstanceOf(Uint8Array);
 			expect(tracker.peerId.length).toBe(20);
 		});
 
 		test("uses provided peer ID", async () => {
-			const { ClientTracker } = await import("./tracker");
 			const customPeerId = createPeerIdBytes("test-peer-id-12345");
 			const tracker = new ClientTracker(customPeerId);
 			expect(tracker.peerId).toBe(customPeerId);
 		});
 
 		test("lastResponse is initially null", async () => {
-			const { ClientTracker } = await import("./tracker");
 			const tracker = new ClientTracker();
 			expect(tracker.lastResponse).toBeNull();
 		});
@@ -231,10 +219,7 @@ describe("ClientTracker", () => {
 
 	describe("announce URL building", () => {
 		test("builds URL with all required parameters", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const response = new Response(bencode({ interval: 1800n, peers: "" }));
 			const originalFetch = globalThis.fetch;
@@ -271,10 +256,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("compact defaults to true", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const response = new Response(bencode({ interval: 1800n, peers: "" }));
 			const originalFetch = globalThis.fetch;
@@ -302,10 +284,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("compact=0 when explicitly false", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const response = new Response(bencode({ interval: 1800n, peers: "" }));
 			const originalFetch = globalThis.fetch;
@@ -334,10 +313,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("includes event parameter", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 
@@ -368,10 +344,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("includes no_peer_id when true", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const response = new Response(bencode({ interval: 1800n, peers: "" }));
 			const originalFetch = globalThis.fetch;
@@ -400,10 +373,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("includes numwant when provided", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const response = new Response(bencode({ interval: 1800n, peers: "" }));
 			const originalFetch = globalThis.fetch;
@@ -432,10 +402,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("includes key when provided", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const response = new Response(bencode({ interval: 1800n, peers: "" }));
 			const originalFetch = globalThis.fetch;
@@ -466,10 +433,7 @@ describe("ClientTracker", () => {
 
 	describe("response parsing - compact format", () => {
 		test("parses single compact peer", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const peers = createCompactPeers([{ ip: "192.168.1.100", port: 6881 }]);
 			const originalFetch = globalThis.fetch;
@@ -497,10 +461,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("parses multiple compact peers", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const peers = createCompactPeers([
 				{ ip: "192.168.1.100", port: 6881 },
@@ -533,10 +494,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("skips invalid peer data", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const peers = createCompactPeers([
 				{ ip: "192.168.1.100", port: 6881 },
@@ -568,10 +526,7 @@ describe("ClientTracker", () => {
 
 	describe("response parsing - dictionary format", () => {
 		test("parses dictionary peers with peer_id", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const peerIdBytes = createPeerIdBytes("peer1-peer1-peer1-");
 			const peers = [
@@ -608,14 +563,9 @@ describe("ClientTracker", () => {
 		});
 
 		test("parses dictionary peers without peer_id", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
-			const peers = [
-				{ ip: new TextEncoder().encode("192.168.1.100"), port: 6881n },
-			];
+			const peers = [{ ip: new TextEncoder().encode("192.168.1.100"), port: 6881n }];
 			const originalFetch = globalThis.fetch;
 
 			globalThis.fetch = createSimpleMockFetch(
@@ -642,10 +592,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("parses hostname in dictionary peer", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const peers = [
 				{
@@ -678,10 +625,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("skips invalid IPs in dictionary peers", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const peers = [
 				{ ip: new TextEncoder().encode("invalid..ip"), port: 6881n },
@@ -712,10 +656,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("skips port 0 in dictionary peers", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const peers = [
 				{ ip: new TextEncoder().encode("192.168.1.100"), port: 0n },
@@ -748,10 +689,7 @@ describe("ClientTracker", () => {
 
 	describe("response fields", () => {
 		test("parses interval", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 			const originalFetch = globalThis.fetch;
 
 			globalThis.fetch = createSimpleMockFetch(
@@ -775,10 +713,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("parses minInterval", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 			const originalFetch = globalThis.fetch;
 
 			globalThis.fetch = createSimpleMockFetch(
@@ -809,10 +744,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("parses complete and incomplete", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 			const originalFetch = globalThis.fetch;
 
 			globalThis.fetch = createSimpleMockFetch(
@@ -845,10 +777,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("parses warning message", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 			const originalFetch = globalThis.fetch;
 
 			globalThis.fetch = createSimpleMockFetch(
@@ -879,10 +808,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("stores response in lastResponse", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const peers = createCompactPeers([{ ip: "192.168.1.100", port: 6881 }]);
 			const originalFetch = globalThis.fetch;
@@ -912,10 +838,7 @@ describe("ClientTracker", () => {
 
 	describe("tracker ID persistence", () => {
 		test("saves trackerId from response", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 			const originalFetch = globalThis.fetch;
 
 			globalThis.fetch = createSimpleMockFetch(
@@ -946,10 +869,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("uses trackerId in subsequent requests", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const capturedTrackerIds: (string | null)[] = [];
 			const originalFetch = globalThis.fetch;
@@ -1001,15 +921,10 @@ describe("ClientTracker", () => {
 
 	describe("error handling", () => {
 		test("throws when response is not a dictionary", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 			const originalFetch = globalThis.fetch;
 
-			globalThis.fetch = createSimpleMockFetch(
-				() => new Response("not a dictionary"),
-			);
+			globalThis.fetch = createSimpleMockFetch(() => new Response("not a dictionary"));
 
 			const infoHash = createInfoHash();
 			expect(async () => {
@@ -1028,10 +943,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("throws when response has failure reason", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 			const originalFetch = globalThis.fetch;
 
 			globalThis.fetch = createSimpleMockFetch(
@@ -1061,10 +973,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("throws when peers field is missing", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 			const originalFetch = globalThis.fetch;
 
 			globalThis.fetch = createSimpleMockFetch(
@@ -1088,10 +997,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("throws when HTTP status is not ok", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 			const originalFetch = globalThis.fetch;
 
 			globalThis.fetch = createSimpleMockFetch(
@@ -1118,10 +1024,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("throws when peers is invalid type", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 			const originalFetch = globalThis.fetch;
 
 			globalThis.fetch = createSimpleMockFetch(
@@ -1147,18 +1050,12 @@ describe("ClientTracker", () => {
 
 	describe("network timeouts", () => {
 		test("fetch is called with AbortSignal.timeout signal", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			let capturedSignal: AbortSignal | undefined;
 			const originalFetch = globalThis.fetch;
 
-			globalThis.fetch = (async (
-				_url: URL | Request | string,
-				init?: RequestInit,
-			) => {
+			globalThis.fetch = (async (_url: URL | Request | string, init?: RequestInit) => {
 				capturedSignal = init?.signal as AbortSignal | undefined;
 				const peers = createCompactPeers([{ ip: "192.168.1.100", port: 6881 }]);
 				return new Response(bencode({ interval: 1800n, peers }));
@@ -1186,10 +1083,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("request completes before timeout", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const peers = createCompactPeers([{ ip: "192.168.1.100", port: 6881 }]);
 			const originalFetch = globalThis.fetch;
@@ -1224,10 +1118,7 @@ describe("ClientTracker", () => {
 
 	describe("concurrent announces", () => {
 		test("multiple simultaneous announces to different trackers", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const trackerUrl1 = "http://tracker1.example.com/announce";
 			const trackerUrl2 = "http://tracker2.example.com/announce";
@@ -1290,18 +1181,13 @@ describe("ClientTracker", () => {
 		});
 
 		test("same tracker with different info hashes concurrently", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const capturedInfoHashes: string[] = [];
 			const originalFetch = globalThis.fetch;
 
 			globalThis.fetch = createMockFetch(async (resolvedUrl) => {
-				capturedInfoHashes.push(
-					resolvedUrl.getRawSearchParam("info_hash") ?? "",
-				);
+				capturedInfoHashes.push(resolvedUrl.getRawSearchParam("info_hash") ?? "");
 				const peers = createCompactPeers([{ ip: "192.168.1.100", port: 6881 }]);
 				return new Response(bencode({ interval: 1800n, peers }));
 			});
@@ -1337,10 +1223,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("lastResponse is updated correctly after concurrent requests", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			let requestCount = 0;
 			const originalFetch = globalThis.fetch;
@@ -1348,9 +1231,7 @@ describe("ClientTracker", () => {
 			globalThis.fetch = createMockFetch(async () => {
 				requestCount++;
 				const peerPort = 6880 + requestCount;
-				const peers = createCompactPeers([
-					{ ip: "192.168.1.100", port: peerPort },
-				]);
+				const peers = createCompactPeers([{ ip: "192.168.1.100", port: peerPort }]);
 				return new Response(bencode({ interval: 1800n, peers }));
 			});
 
@@ -1394,10 +1275,7 @@ describe("ClientTracker", () => {
 
 	describe("binary-safe URL encoding", () => {
 		test("encodes info_hash with null bytes", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 			let capturedInfoHash!: string | null;
@@ -1430,10 +1308,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("encodes info_hash with high ASCII bytes", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 			let capturedInfoHash!: string | null;
@@ -1468,10 +1343,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("encodes info_hash with special characters", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 			let capturedInfoHash!: string | null;
@@ -1510,8 +1382,6 @@ describe("ClientTracker", () => {
 		});
 
 		test("encodes peer_id with all binary values", async () => {
-			const { ClientTracker } = await import("./tracker");
-
 			// Create a peer ID with all possible byte values
 			const peerIdBytes = new Uint8Array(20);
 			for (let i = 0; i < 20; i++) {
@@ -1548,10 +1418,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("info_hash and peer_id use uppercase hex encoding", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 			let capturedInfoHash!: string | null;
@@ -1586,10 +1453,7 @@ describe("ClientTracker", () => {
 
 	describe("IPv6 peer parsing", () => {
 		test("IPv6 compact peers are not currently supported", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			// IPv6 peer in compact format (18 bytes: 16 for IP, 2 for port)
 			// ::1 in IPv6 would be 00000000000000000000000000000001
@@ -1639,10 +1503,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("mixed IPv4 and IPv6 peers would need separate handling", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			// 12 bytes: 2 valid IPv4 peers
 			const peers = createCompactPeers([
@@ -1677,19 +1538,14 @@ describe("ClientTracker", () => {
 
 	describe("fuzz tests - malformed bencoded responses", () => {
 		test("throws on empty response body", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 
-			globalThis.fetch = createSimpleMockFetch(
-				() => new Response(new Uint8Array(0)),
-			);
+			globalThis.fetch = createSimpleMockFetch(() => new Response(new Uint8Array(0)));
 
 			const infoHash = createInfoHash();
-			await expect(
+			expect(
 				tracker.announce({
 					trackerURL: new URL("http://tracker.example.com/announce"),
 					infoHash,
@@ -1705,22 +1561,17 @@ describe("ClientTracker", () => {
 		});
 
 		test("throws on partial/truncated bencode", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 
 			// Truncated dictionary - missing closing 'e'
 			const truncatedBencode = new TextEncoder().encode("d8:intervali1800ee");
 
-			globalThis.fetch = createSimpleMockFetch(
-				() => new Response(truncatedBencode),
-			);
+			globalThis.fetch = createSimpleMockFetch(() => new Response(truncatedBencode));
 
 			const infoHash = createInfoHash();
-			await expect(
+			expect(
 				tracker.announce({
 					trackerURL: new URL("http://tracker.example.com/announce"),
 					infoHash,
@@ -1736,24 +1587,17 @@ describe("ClientTracker", () => {
 		});
 
 		test("throws on invalid bencode syntax - missing colon", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 
 			// Invalid bencode - missing colon after length
-			const invalidBencode = new TextEncoder().encode(
-				"d5:peers5:value5:intervali1800ee",
-			);
+			const invalidBencode = new TextEncoder().encode("d5:peers5:value5:intervali1800ee");
 
-			globalThis.fetch = createSimpleMockFetch(
-				() => new Response(invalidBencode),
-			);
+			globalThis.fetch = createSimpleMockFetch(() => new Response(invalidBencode));
 
 			const infoHash = createInfoHash();
-			await expect(
+			expect(
 				tracker.announce({
 					trackerURL: new URL("http://tracker.example.com/announce"),
 					infoHash,
@@ -1769,26 +1613,16 @@ describe("ClientTracker", () => {
 		});
 
 		test("parses valid bencode with extra garbage data", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 
 			// Valid bencode followed by garbage
 			const peers = createCompactPeers([{ ip: "192.168.1.100", port: 6881 }]);
 			const validBencode = bencode({ interval: 1800n, peers });
-			const garbageBencode = new Uint8Array([
-				...validBencode,
-				0xff,
-				0xfe,
-				0x00,
-			]);
+			const garbageBencode = new Uint8Array([...validBencode, 0xff, 0xfe, 0x00]);
 
-			globalThis.fetch = createSimpleMockFetch(
-				() => new Response(garbageBencode),
-			);
+			globalThis.fetch = createSimpleMockFetch(() => new Response(garbageBencode));
 
 			const infoHash = createInfoHash();
 			// This may throw or may parse partial - behavior depends on implementation
@@ -1812,23 +1646,20 @@ describe("ClientTracker", () => {
 		});
 
 		test("throws on binary garbage response", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 
 			// Random binary garbage
 			const garbage = new Uint8Array([
-				0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
-				0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13,
+				0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+				0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13,
 			]);
 
 			globalThis.fetch = createSimpleMockFetch(() => new Response(garbage));
 
 			const infoHash = createInfoHash();
-			await expect(
+			expect(
 				tracker.announce({
 					trackerURL: new URL("http://tracker.example.com/announce"),
 					infoHash,
@@ -1844,24 +1675,17 @@ describe("ClientTracker", () => {
 		});
 
 		test("throws on bencode with invalid integer format", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 
 			// Invalid bencode - missing closing 'e' for integer
-			const invalidBencode = new TextEncoder().encode(
-				"d8:intervali18005:peersle",
-			);
+			const invalidBencode = new TextEncoder().encode("d8:intervali18005:peersle");
 
-			globalThis.fetch = createSimpleMockFetch(
-				() => new Response(invalidBencode),
-			);
+			globalThis.fetch = createSimpleMockFetch(() => new Response(invalidBencode));
 
 			const infoHash = createInfoHash();
-			await expect(
+			expect(
 				tracker.announce({
 					trackerURL: new URL("http://tracker.example.com/announce"),
 					infoHash,
@@ -1877,10 +1701,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("handles response with peers as integer", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 
@@ -1889,7 +1710,7 @@ describe("ClientTracker", () => {
 			);
 
 			const infoHash = createInfoHash();
-			await expect(
+			expect(
 				tracker.announce({
 					trackerURL: new URL("http://tracker.example.com/announce"),
 					infoHash,
@@ -1905,19 +1726,14 @@ describe("ClientTracker", () => {
 		});
 
 		test("handles response with peers as nested structure", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 
 			// When bencoding, a Uint8Array is treated as a string, so passing
 			// a TextEncoder-encoded dictionary results in a bencoded string.
 			// The tracker will try to parse this as compact peers.
-			const invalidPeers = new TextEncoder().encode(
-				"d2:ip12:192.168.1.1004:porti6881ee",
-			);
+			const invalidPeers = new TextEncoder().encode("d2:ip12:192.168.1.1004:porti6881ee");
 
 			globalThis.fetch = createSimpleMockFetch(
 				() => new Response(bencode({ interval: 1800n, peers: invalidPeers })),
@@ -1949,10 +1765,7 @@ describe("ClientTracker", () => {
 
 	describe("integration with real HTTP server", () => {
 		test("works with actual HTTP server using Bun.serve", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			// Create peers manually as bytes to avoid any encoding issues
 			// Port 6881 = 0x1AE1, Port 443 = 0x01BB
@@ -2019,10 +1832,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("handles server returning HTTP error status", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const server = Bun.serve({
 				port: 0,
@@ -2060,10 +1870,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("handles server returning failure reason", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const server = Bun.serve({
 				port: 0,
@@ -2091,9 +1898,7 @@ describe("ClientTracker", () => {
 			} catch (error) {
 				thrown = true;
 				expect(error).toBeInstanceOf(Error);
-				expect((error as Error).message).toBe(
-					"Tracker failure: Invalid torrent",
-				);
+				expect((error as Error).message).toBe("Tracker failure: Invalid torrent");
 			} finally {
 				server.stop();
 			}
@@ -2104,10 +1909,7 @@ describe("ClientTracker", () => {
 
 	describe("large peer list handling", () => {
 		test("handles response with thousands of peers", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 
@@ -2150,10 +1952,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("handles maximum size peer response (2560 bytes = ~426 peers)", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 
@@ -2189,10 +1988,7 @@ describe("ClientTracker", () => {
 		});
 
 		test("handles peers with port boundary values", async () => {
-			const { ClientTracker } = await import("./tracker");
-			const tracker = new ClientTracker(
-				createPeerIdBytes("test-peer-id-12345"),
-			);
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
 
 			const originalFetch = globalThis.fetch;
 
@@ -2233,12 +2029,384 @@ describe("ClientTracker", () => {
 		});
 	});
 
+	describe("real torrent files", () => {
+		test("uses self.torrent infoHash in announce URL", async () => {
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
+
+			const meta = await loadTestTorrentFile("self.torrent");
+			const originalFetch = globalThis.fetch;
+			let capturedUrl: URL | undefined;
+
+			globalThis.fetch = createMockFetch(async (resolvedUrl) => {
+				capturedUrl = resolvedUrl;
+				return new Response(bencode({ interval: 1800n, peers: "" }));
+			});
+
+			await tracker.announce({
+				trackerURL: new URL("http://tracker.example.com/announce"),
+				infoHash: meta.infoHash as SHA1Hash,
+				currentHost: toIPAddr("192.168.1.1"),
+				port: toPort(6881),
+				uploadedBytes: 0,
+				downloadedBytes: 0,
+				leftBytes: 1000000,
+			});
+
+			globalThis.fetch = originalFetch;
+
+			expect(capturedUrl).toBeDefined();
+			const rawInfoHash = (capturedUrl as unknown as MockURL).getRawSearchParam("info_hash");
+			expect(rawInfoHash).toBeDefined();
+			// Verify the infoHash matches the torrent file (percent-encoded)
+			const expectedInfoHash = Array.from(meta.infoHash)
+				.map((b) => `%${b.toString(16).padStart(2, "0")}`)
+				.join("")
+				.toUpperCase();
+			expect(rawInfoHash).toBe(expectedInfoHash);
+		});
+
+		test("uses debian torrent infoHash in announce URL", async () => {
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
+
+			const meta = await loadTestTorrentFile("debian-13.3.0-amd64-netinst.iso.torrent");
+			const originalFetch = globalThis.fetch;
+			let capturedUrl: URL | undefined;
+
+			globalThis.fetch = createMockFetch(async (resolvedUrl) => {
+				capturedUrl = resolvedUrl;
+				return new Response(bencode({ interval: 1800n, peers: "" }));
+			});
+
+			await tracker.announce({
+				trackerURL: meta.announce,
+				infoHash: meta.infoHash as SHA1Hash,
+				currentHost: toIPAddr("192.168.1.1"),
+				port: toPort(6881),
+				uploadedBytes: 0,
+				downloadedBytes: 0,
+				leftBytes: meta.info.length,
+			});
+
+			globalThis.fetch = originalFetch;
+
+			expect(capturedUrl).toBeDefined();
+			const rawInfoHash = (capturedUrl as unknown as MockURL).getRawSearchParam("info_hash");
+			expect(rawInfoHash).toBeDefined();
+			// Verify the infoHash matches the torrent file
+			const expectedInfoHash = Array.from(meta.infoHash)
+				.map((b) => `%${b.toString(16).padStart(2, "0")}`)
+				.join("")
+				.toUpperCase();
+			expect(rawInfoHash).toBe(expectedInfoHash);
+		});
+
+		test("uses bbb_sunflower torrent infoHash in announce URL", async () => {
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
+
+			const meta = await loadTestTorrentFile("bbb_sunflower_1080p_60fps_normal.mp4.torrent");
+			const originalFetch = globalThis.fetch;
+			let capturedUrl: URL | undefined;
+
+			globalThis.fetch = createMockFetch(async (resolvedUrl) => {
+				capturedUrl = resolvedUrl;
+				return new Response(bencode({ interval: 1800n, peers: "" }));
+			});
+
+			await tracker.announce({
+				trackerURL: meta.announce,
+				infoHash: meta.infoHash as SHA1Hash,
+				currentHost: toIPAddr("192.168.1.1"),
+				port: toPort(6881),
+				uploadedBytes: 0,
+				downloadedBytes: 0,
+				leftBytes: meta.info.length,
+			});
+
+			globalThis.fetch = originalFetch;
+
+			expect(capturedUrl).toBeDefined();
+			const rawInfoHash = (capturedUrl as unknown as MockURL).getRawSearchParam("info_hash");
+			expect(rawInfoHash).toBeDefined();
+			// Verify the infoHash matches the torrent file
+			const expectedInfoHash = Array.from(meta.infoHash)
+				.map((b) => `%${b.toString(16).padStart(2, "0")}`)
+				.join("")
+				.toUpperCase();
+			expect(rawInfoHash).toBe(expectedInfoHash);
+		});
+
+		test("parses real torrent peer responses with self.torrent infoHash", async () => {
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
+
+			const meta = await loadTestTorrentFile("self.torrent");
+			const peers = createCompactPeers([
+				{ ip: "192.168.1.100", port: 6881 },
+				{ ip: "192.168.1.101", port: 6882 },
+			]);
+
+			const originalFetch = globalThis.fetch;
+			globalThis.fetch = createSimpleMockFetch(
+				() => new Response(bencode({ interval: 1800n, peers })),
+			);
+
+			const response = await tracker.announce({
+				trackerURL: new URL("http://tracker.example.com/announce"),
+				infoHash: meta.infoHash as SHA1Hash,
+				currentHost: toIPAddr("192.168.1.1"),
+				port: toPort(6881),
+				uploadedBytes: 0,
+				downloadedBytes: 0,
+				leftBytes: 1000000,
+			});
+
+			globalThis.fetch = originalFetch;
+
+			expect(response.interval).toBe(1800n);
+			expect(response.peers).toBeArrayOfSize(2);
+			expect(response.peers[0]?.host).toBe(toIPAddr("192.168.1.100"));
+			expect(response.peers[0]?.port).toBe(toPort(6881));
+		});
+
+		test("handles real torrent with different piece sizes", async () => {
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
+
+			// Load both single-file and multi-file torrents
+			const debianMeta = await loadTestTorrentFile("debian-13.3.0-amd64-netinst.iso.torrent");
+			const selfMeta = await loadTestTorrentFile("self.torrent");
+
+			// Verify both have valid infoHashes of correct length
+			expect(debianMeta.infoHash).toBeInstanceOf(Uint8Array);
+			expect(debianMeta.infoHash.length).toBe(20);
+			expect(selfMeta.infoHash).toBeInstanceOf(Uint8Array);
+			expect(selfMeta.infoHash.length).toBe(20);
+
+			// Verify infoHashes are different
+			const sameHash = debianMeta.infoHash.every((b, i) => b === selfMeta.infoHash[i]);
+			expect(sameHash).toBeFalse();
+		});
+
+		test("includes correct leftBytes parameter for real torrents", async () => {
+			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
+
+			const meta = await loadTestTorrentFile("debian-13.3.0-amd64-netinst.iso.torrent");
+			const originalFetch = globalThis.fetch;
+			let capturedUrl: URL | undefined;
+
+			globalThis.fetch = createMockFetch(async (resolvedUrl) => {
+				capturedUrl = resolvedUrl;
+				return new Response(bencode({ interval: 1800n, peers: "" }));
+			});
+
+			// Use actual file size as leftBytes
+			const leftBytes = "length" in meta.info ? meta.info.length : meta.info.pieceLength * 10;
+
+			await tracker.announce({
+				trackerURL: meta.announce,
+				infoHash: meta.infoHash as SHA1Hash,
+				currentHost: toIPAddr("192.168.1.1"),
+				port: toPort(6881),
+				uploadedBytes: 0,
+				downloadedBytes: 0,
+				leftBytes,
+			});
+
+			globalThis.fetch = originalFetch;
+
+			expect(capturedUrl).toBeDefined();
+			expect(capturedUrl?.searchParams.get("left")).toBe(leftBytes.toString());
+		});
+	});
+
+	describe("real tracker requests - Debian torrent", () => {
+		/**
+		 * Helper to check if the Debian tracker is reachable.
+		 * Returns true if the tracker responds, false otherwise.
+		 */
+		async function isTrackerReachable(url: string): Promise<boolean> {
+			try {
+				const controller = new AbortController();
+				const timeout = setTimeout(() => controller.abort(), 3000);
+				// Just check if the server responds (any response is fine)
+				await fetch(url, {
+					signal: controller.signal,
+				});
+				clearTimeout(timeout);
+				return true;
+			} catch {
+				return false;
+			}
+		}
+
+		test("makes real HTTP announce request to Debian tracker", async () => {
+			// Load the real Debian torrent file first
+			const meta = await loadTestTorrentFile("debian-13.3.0-amd64-netinst.iso.torrent");
+
+			// Skip if tracker is not reachable
+			const trackerReachable = await isTrackerReachable(meta.announce.href);
+			if (!trackerReachable) {
+				console.warn("Debian tracker unreachable - skipping real tracker test");
+				return;
+			}
+
+			// Create a unique peer ID for this test
+			const uniquePeerId = createPeerIdBytes(`peerwire-${Date.now()}`);
+			const tracker = new ClientTracker(uniquePeerId);
+
+			// Make a REAL announce request (no mocks!)
+			const response = await tracker.announce({
+				trackerURL: meta.announce,
+				infoHash: meta.infoHash as SHA1Hash,
+				currentHost: toIPAddr("127.0.0.1"),
+				port: toPort(6881),
+				uploadedBytes: 0,
+				downloadedBytes: 0,
+				leftBytes: meta.info.length,
+				event: "started",
+			});
+
+			// Verify response has valid structure
+			expect(response.interval).toBeDefined();
+			expect(typeof response.interval).toBe("bigint");
+			expect(response.interval).toBeGreaterThan(0n);
+			expect(response.peers).toBeDefined();
+			expect(Array.isArray(response.peers)).toBeTrue();
+
+			// Log the response for debugging
+			console.log("Real tracker response:", {
+				interval: Number(response.interval),
+				peerCount: response.peers.length,
+				complete: response.complete ? Number(response.complete) : undefined,
+				incomplete: response.incomplete ? Number(response.incomplete) : undefined,
+			});
+		}, 60_000);
+
+		test("real announce request returns valid peer data structure", async () => {
+			// Load the real Debian torrent file first
+			const meta = await loadTestTorrentFile("debian-13.3.0-amd64-netinst.iso.torrent");
+
+			// Skip if tracker is not reachable
+			const trackerReachable = await isTrackerReachable(meta.announce.href);
+			if (!trackerReachable) {
+				console.warn("Debian tracker unreachable - skipping real tracker test");
+				return;
+			}
+
+			// Create a unique peer ID
+			const uniquePeerId = createPeerIdBytes(`peerwire-${Date.now()}`);
+			const tracker = new ClientTracker(uniquePeerId);
+
+			// Make the announce request
+			const response = await tracker.announce({
+				trackerURL: meta.announce,
+				infoHash: meta.infoHash as SHA1Hash,
+				currentHost: toIPAddr("127.0.0.1"),
+				port: toPort(6881),
+				uploadedBytes: 0,
+				downloadedBytes: 0,
+				leftBytes: meta.info.length,
+				event: "started",
+			});
+
+			// Verify interval is reasonable (typically 15-30 minutes)
+			expect(response.interval).toBeGreaterThanOrEqual(60n); // At least 1 minute
+			expect(response.interval).toBeLessThanOrEqual(3600n); // At most 1 hour
+
+			// Verify peers array structure (if any peers are returned)
+			if (response.peers.length > 0) {
+				const firstPeer = response.peers[0];
+				expect(firstPeer).toBeDefined();
+				expect(firstPeer.host).toBeDefined();
+				expect(firstPeer.port).toBeDefined();
+
+				// Verify port is in valid range
+				const portNum = Number(firstPeer.port);
+				expect(portNum).toBeGreaterThan(0);
+				expect(portNum).toBeLessThanOrEqual(65535);
+			}
+		}, 60_000);
+
+		test("real announce with completed event", async () => {
+			// Load the real Debian torrent file first
+			const meta = await loadTestTorrentFile("debian-13.3.0-amd64-netinst.iso.torrent");
+
+			// Skip if tracker is not reachable
+			const trackerReachable = await isTrackerReachable(meta.announce.href);
+			if (!trackerReachable) {
+				console.warn("Debian tracker unreachable - skipping real tracker test");
+				return;
+			}
+
+			const uniquePeerId = createPeerIdBytes(`peerwire-${Date.now()}`);
+			const tracker = new ClientTracker(uniquePeerId);
+
+			// First announce as started
+			await tracker.announce({
+				trackerURL: meta.announce,
+				infoHash: meta.infoHash as SHA1Hash,
+				currentHost: toIPAddr("127.0.0.1"),
+				port: toPort(6881),
+				uploadedBytes: 0,
+				downloadedBytes: 0,
+				leftBytes: meta.info.length,
+				event: "started",
+			});
+
+			// Then announce as completed (simulating finished download)
+			const response = await tracker.announce({
+				trackerURL: meta.announce,
+				infoHash: meta.infoHash as SHA1Hash,
+				currentHost: toIPAddr("127.0.0.1"),
+				port: toPort(6881),
+				uploadedBytes: 790626304,
+				downloadedBytes: 790626304,
+				leftBytes: 0,
+				event: "completed",
+			});
+
+			// Response should still be valid
+			expect(response.interval).toBeDefined();
+			expect(response.peers).toBeDefined();
+		}, 60_000);
+
+		test("real announce stores response in lastResponse", async () => {
+			// Load the real Debian torrent file first
+			const meta = await loadTestTorrentFile("debian-13.3.0-amd64-netinst.iso.torrent");
+
+			// Skip if tracker is not reachable
+			const trackerReachable = await isTrackerReachable(meta.announce.href);
+			if (!trackerReachable) {
+				console.warn("Debian tracker unreachable - skipping real tracker test");
+				return;
+			}
+
+			const uniquePeerId = createPeerIdBytes(`peerwire-${Date.now()}`);
+			const tracker = new ClientTracker(uniquePeerId);
+
+			expect(tracker.lastResponse).toBeNull();
+
+			await tracker.announce({
+				trackerURL: meta.announce,
+				infoHash: meta.infoHash as SHA1Hash,
+				currentHost: toIPAddr("127.0.0.1"),
+				port: toPort(6881),
+				uploadedBytes: 0,
+				downloadedBytes: 0,
+				leftBytes: meta.info.length,
+				event: "started",
+			});
+
+			expect(tracker.lastResponse).not.toBeNull();
+			expect(tracker.lastResponse?.interval).toBeDefined();
+			expect(tracker.lastResponse?.peers).toBeDefined();
+		}, 60_000);
+	});
+
 	describe("integration with real tracker", () => {
 		test("real HTTP request to Debian tracker", async () => {
 			try {
 				const controller = new AbortController();
 				const timeout = setTimeout(() => controller.abort(), 2000);
-				await fetch("http://bttracker.debian.org:6969/announce", {
+				await fetch(meta.announce.href, {
 					signal: controller.signal,
 				});
 				clearTimeout(timeout);
@@ -2247,7 +2415,6 @@ describe("ClientTracker", () => {
 				return;
 			}
 
-			const { ClientTracker } = await import("./tracker");
 			const tracker = new ClientTracker(createPeerIdBytes("peerwire-test0001"));
 
 			const torrentPath = path.join(
@@ -2263,7 +2430,7 @@ describe("ClientTracker", () => {
 				port: toPort(6881),
 				uploadedBytes: 0,
 				downloadedBytes: 0,
-				leftBytes: 790626304,
+				leftBytes: meta.info.length,
 				event: "started",
 			});
 

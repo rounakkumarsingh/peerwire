@@ -1,19 +1,21 @@
 {
 	"name": "peerwire",
-	"module": "index.ts",
-	"type": "module",
 	"private": true,
+	"type": "module",
+	"module": "index.ts",
+	"scripts": {
+		"test": "bun test",
+		"lint": "oxlint",
+		"lint:fix": "oxlint --fix",
+		"fmt": "oxfmt",
+		"fmt:check": "oxfmt --check"
+	},
 	"devDependencies": {
-		"@biomejs/biome": "2.4.10",
-		"@types/bun": "latest"
+		"@types/bun": "latest",
+		"oxfmt": "^0.46.0",
+		"oxlint": "^1.61.0"
 	},
 	"peerDependencies": {
 		"typescript": "^5.9.3"
-	},
-	"scripts": {
-		"test": "bun test",
-		"biome:lint": "bunx --bun @biomejs/biome lint",
-		"biome:format": "bunx --bun @biomejs/biome format",
-		"biome:check": "bunx --bun @biomejs/biome check"
 	}
 }
