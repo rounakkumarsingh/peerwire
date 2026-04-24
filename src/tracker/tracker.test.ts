@@ -2168,8 +2168,6 @@ describe("ClientTracker", () => {
 		});
 
 		test("handles real torrent with different piece sizes", async () => {
-			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
-
 			// Load both single-file and multi-file torrents
 			const debianMeta = await loadTestTorrentFile("debian-13.3.0-amd64-netinst.iso.torrent");
 			const selfMeta = await loadTestTorrentFile("self.torrent");

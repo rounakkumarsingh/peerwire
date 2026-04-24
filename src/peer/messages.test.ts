@@ -14,7 +14,7 @@ function buildMessage(type: number, payload: number[] = []): Uint8Array {
 	view.setUint32(0, length, false); // big-endian length prefix
 	buffer[4] = type;
 	for (let i = 0; i < payload.length; i++) {
-		buffer[5 + i] = payload[i];
+		buffer[5 + i] = payload[i]!;
 	}
 	return buffer;
 }
@@ -24,12 +24,7 @@ function buildMessage(type: number, payload: number[] = []): Uint8Array {
  * Used for piece indices, offsets, and lengths.
  */
 function uint32Bytes(value: number): number[] {
-	return [
-		(value >>> 24) & 0xff,
-		(value >>> 16) & 0xff,
-		(value >>> 8) & 0xff,
-		value & 0xff,
-	];
+	return [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];
 }
 
 /**
@@ -146,7 +141,10 @@ describe("parsePeerMessage", () => {
 		test("parses Have with max 32-bit index", () => {
 			const data = buildMessage(PeerMessageType.Have, uint32Bytes(0xffffffff));
 			const result = parsePeerMessage(data);
-			expect(result).toEqual({ type: PeerMessageType.Have, index: 0xffffffff });
+			expect(result).toEqual({
+				type: PeerMessageType.Have,
+				index: 0xffffffff,
+			});
 		});
 
 		test("Have with wrong length (too short) throws", () => {
@@ -215,7 +213,7 @@ describe("parsePeerMessage", () => {
 		});
 
 		test("parses large Bitfield payload", () => {
-			const bitfieldData = new Array(100).fill(0x55);
+			const bitfieldData = Array.from({ length: 100 }, () => 0x55);
 			const data = buildMessage(PeerMessageType.Bitfield, bitfieldData);
 			const result = parsePeerMessage(data);
 			expect(result.type).toBe(PeerMessageType.Bitfield);
@@ -314,7 +312,7 @@ describe("parsePeerMessage", () => {
 		});
 
 		test("parses Piece with typical block data", () => {
-			const blockData = new Array(16384).fill(0xab);
+			const blockData = Array.from({ length: 16384 }, () => 0xab);
 			const payload = [
 				...uint32Bytes(3), // index
 				...uint32Bytes(32768), // begin (offset into piece)
@@ -499,15 +497,13 @@ describe("parsePeerMessage", () => {
 
 	describe("Error cases", () => {
 		test("data less than 4 bytes throws", () => {
-			expect(() => parsePeerMessage(new Uint8Array(0))).toThrow(
-				"Invalid message: too short",
-			);
+			expect(() => parsePeerMessage(new Uint8Array(0))).toThrow("Invalid message: too short");
 			expect(() => parsePeerMessage(new Uint8Array([0x00]))).toThrow(
 				"Invalid message: too short",
 			);
-			expect(() =>
-				parsePeerMessage(new Uint8Array([0x00, 0x00, 0x00])),
-			).toThrow("Invalid message: too short");
+			expect(() => parsePeerMessage(new Uint8Array([0x00, 0x00, 0x00]))).toThrow(
+				"Invalid message: too short",
+			);
 		});
 
 		test("actual data shorter than length prefix claims throws", () => {
@@ -525,9 +521,7 @@ describe("parsePeerMessage", () => {
 			new DataView(buffer.buffer).setUint32(0, 2, false);
 			buffer[4] = 99; // Unknown type
 			buffer[5] = 0;
-			expect(() => parsePeerMessage(buffer)).toThrow(
-				"Unknown message type: 99",
-			);
+			expect(() => parsePeerMessage(buffer)).toThrow("Unknown message type: 99");
 		});
 
 		test("edge case: message type at boundary (10)", () => {
@@ -540,7 +534,7 @@ describe("parsePeerMessage", () => {
 			buffer[4] = 10; // This is KeepAlive enum value but not a valid wire message type
 			buffer[5] = 0;
 			expect(() => parsePeerMessage(buffer)).toThrow(
-				"Unknown message type: 10",
+				`Invalid keep-alive message: expected length 0 but got 2`,
 			);
 		});
 
@@ -549,9 +543,7 @@ describe("parsePeerMessage", () => {
 			const buffer = new Uint8Array(4);
 			new DataView(buffer.buffer).setUint32(0, 0xffffffff, false); // Max uint32
 			// This is a huge length claim that won't match actual data
-			expect(() => parsePeerMessage(buffer)).toThrow(
-				/Invalid message: expected length/,
-			);
+			expect(() => parsePeerMessage(buffer)).toThrow(/Invalid message: expected length/);
 		});
 	});
 
@@ -568,7 +560,10 @@ describe("parsePeerMessage", () => {
 
 			const sliced = largeBuffer.slice(10, 19); // Just the message bytes
 			const result = parsePeerMessage(sliced);
-			expect(result).toEqual({ type: PeerMessageType.Have, index: 12345 });
+			expect(result).toEqual({
+				type: PeerMessageType.Have,
+				index: 12345,
+			});
 		});
 
 		test("handles subarray view correctly", () => {

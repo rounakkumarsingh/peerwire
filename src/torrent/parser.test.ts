@@ -74,9 +74,9 @@ describe("single file torrent", () => {
 
 		expect(isMultipleFile(meta.info)).toBeFalse();
 		expect(isSingleFile(meta.info)).toBeTrue();
-		meta.info = meta.info as TorrentMetadataSingleFileInfo;
-		expect(meta.info.length).toBe(790626304);
-		expect(meta.info.pieces.length).toBeGreaterThan(0);
+		const info = meta.info as TorrentMetadataSingleFileInfo;
+		expect(info.length).toBe(790626304);
+		expect(info.pieces.length).toBeGreaterThan(0);
 	});
 	test("parses video torrent correctly", async () => {
 		const torrentPath = path.join(
