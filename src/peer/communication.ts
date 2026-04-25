@@ -2,7 +2,7 @@ import type { SHA1Hash, TorrentMetadata } from "../torrent/metadata";
 import type { TrackerPeer } from "../tracker/types";
 import { toUint8Array } from "../utils/toUint8Array";
 
-type PeerWireSocketData = { peerWire?: PeerWireCommunication };
+type PeerWireSocketData = { peerWire?: PeerWireConnection };
 
 // BitTorrent handshake constants
 const HANDSHAKE_PROTOCOL_LEN = 19;
@@ -29,13 +29,37 @@ const debug = (...args: unknown[]) => {
 	}
 };
 
-// Ring buffer for accumulating TCP stream data until complete messages arrive
+/**
+ * Ring buffer for accumulating TCP stream data until complete messages arrive.
+ *
+ * This class implements a circular buffer (ring buffer) that efficiently
+ * handles streaming data from TCP connections. It allows appending incoming
+ * chunks of data and draining complete messages when they become available.
+ *
+ * The buffer has a fixed capacity of 64 KiB and throws errors if an append
+ * operation would exceed available space. It handles wrap-around automatically
+ * for both read and write operations.
+ */
 class ReadBuffer {
+	/** The underlying Uint8Array storage for the ring buffer (64 KiB capacity) */
 	private buffer = new Uint8Array(64 * 1024); // 64 KiB
-	head = 0; // Read position
-	tail = 0; // Write position
-	size = 0; // Current data amount
+	/** Current read position in the buffer */
+	head = 0;
+	/** Current write position in the buffer */
+	tail = 0;
+	/** Number of bytes currently stored in the buffer */
+	size = 0;
 
+	/**
+	 * Appends a chunk of data to the ring buffer.
+	 *
+	 * The data is copied into the buffer starting at the current tail position,
+	 * wrapping around to the beginning of the buffer if necessary. Throws an error
+	 * if the chunk is too large to fit in the remaining available space.
+	 *
+	 * @param chunk - The Uint8Array data to append to the buffer
+	 * @throws Error if the chunk is too large for the remaining buffer space
+	 */
 	append(chunk: Uint8Array): void {
 		const chunkLen = chunk.length;
 		const capacity = this.buffer.length;
@@ -59,11 +83,26 @@ class ReadBuffer {
 		this.size += chunkLen;
 	}
 
+	/**
+	 * Returns the number of bytes currently stored in the buffer.
+	 *
+	 * @returns The current size of buffered data in bytes
+	 */
 	length(): number {
 		return this.size;
 	}
 
-	// Get and remove the first n bytes
+	/**
+	 * Removes and returns the first n bytes from the buffer.
+	 *
+	 * This method reads up to n bytes from the head of the buffer, removing them
+	 * from the buffer. If the data wraps around the end of the underlying array,
+	 * it is seamlessly reassembled into a contiguous Uint8Array.
+	 *
+	 * @param n - The number of bytes to drain from the buffer
+	 * @returns A new Uint8Array containing the drained bytes
+	 * @throws Error if n exceeds the available data in the buffer
+	 */
 	drain(n: number): Uint8Array {
 		if (n > this.size) {
 			console.error(`Attempt to drain ${n} bytes, but only ${this.size} available`);
@@ -88,7 +127,7 @@ class ReadBuffer {
 	}
 }
 
-export class PeerWireCommunication {
+export class PeerWireConnection {
 	readonly peer: TrackerPeer;
 	readonly infoHash: SHA1Hash;
 	readonly peerId: SHA1Hash;
@@ -129,7 +168,7 @@ export class PeerWireCommunication {
 	}
 
 	private createHandshakeHandler() {
-		const processHandshake = (instance: PeerWireCommunication) => {
+		const processHandshake = (instance: PeerWireConnection) => {
 			if (instance.readBuffer.length() < HANDSHAKE_TOTAL_LEN) {
 				throw new Error(
 					`Not enough data for handshake: ${instance.readBuffer.length()} bytes available, but ${HANDSHAKE_TOTAL_LEN} required`,
@@ -261,14 +300,14 @@ export class PeerWireCommunication {
 		infoHash: SHA1Hash,
 		peerId: SHA1Hash,
 		torrentMetadata: TorrentMetadata,
-	): Promise<PeerWireCommunication> {
+	): Promise<PeerWireConnection> {
 		const socket = await Bun.connect<PeerWireSocketData>({
 			hostname: peer.host,
 			port: peer.port,
 			socket: {
 				binaryType: "uint8array",
 				open: (socket) => {
-					socket.write(PeerWireCommunication.buildHandshake(infoHash, peerId));
+					socket.write(PeerWireConnection.buildHandshake(infoHash, peerId));
 					debug(`Handshake Initiated with peer ${peer.host}:${peer.port}`);
 				},
 				data: (socket, data) => {
@@ -282,12 +321,12 @@ export class PeerWireCommunication {
 			},
 		});
 
-		const instance = new PeerWireCommunication(peer, infoHash, peerId, socket, torrentMetadata);
+		const instance = new PeerWireConnection(peer, infoHash, peerId, socket, torrentMetadata);
 		instance.socket.data = { peerWire: instance };
 		return instance;
 	}
 
 	handshakePacket(): Buffer {
-		return PeerWireCommunication.buildHandshake(this.infoHash, this.peerId);
+		return PeerWireConnection.buildHandshake(this.infoHash, this.peerId);
 	}
 }
