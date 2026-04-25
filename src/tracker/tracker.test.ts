@@ -1834,7 +1834,7 @@ describe("ClientTracker", () => {
 				expect(response.peers[1]?.host).toBe(toIPAddr("10.0.0.50"));
 				expect(response.peers[1]?.port).toBe(toPort(443));
 			} finally {
-				server.stop();
+				await server.stop();
 			}
 		});
 
@@ -1870,7 +1870,7 @@ describe("ClientTracker", () => {
 				expect((error as Error).message).toContain("Tracker request failed");
 				expect((error as Error).message).toContain("503");
 			} finally {
-				server.stop();
+				await server.stop();
 			}
 
 			expect(thrown).toBe(true);
@@ -1907,7 +1907,7 @@ describe("ClientTracker", () => {
 				expect(error).toBeInstanceOf(Error);
 				expect((error as Error).message).toBe("Tracker failure: Invalid torrent");
 			} finally {
-				server.stop();
+				await server.stop();
 			}
 
 			expect(thrown).toBe(true);
@@ -2051,7 +2051,7 @@ describe("ClientTracker", () => {
 
 			await tracker.announce({
 				trackerURL: meta.announce,
-				infoHash: meta.infoHash as SHA1Hash,
+				infoHash: meta.infoHash,
 				currentHost: toIPAddr("192.168.1.1"),
 				port: toPort(6881),
 				uploadedBytes: 0,
@@ -2086,7 +2086,7 @@ describe("ClientTracker", () => {
 
 			await tracker.announce({
 				trackerURL: meta.announce,
-				infoHash: meta.infoHash as SHA1Hash,
+				infoHash: meta.infoHash,
 				currentHost: toIPAddr("192.168.1.1"),
 				port: toPort(6881),
 				uploadedBytes: 0,
@@ -2121,7 +2121,7 @@ describe("ClientTracker", () => {
 
 			await tracker.announce({
 				trackerURL: meta.announce,
-				infoHash: meta.infoHash as SHA1Hash,
+				infoHash: meta.infoHash,
 				currentHost: toIPAddr("192.168.1.1"),
 				port: toPort(6881),
 				uploadedBytes: 0,
@@ -2181,7 +2181,7 @@ describe("ClientTracker", () => {
 			// Make a REAL announce request (no mocks!)
 			const response = await tracker.announce({
 				trackerURL: meta.announce,
-				infoHash: meta.infoHash as SHA1Hash,
+				infoHash: meta.infoHash,
 				currentHost: toIPAddr("127.0.0.1"),
 				port: toPort(6881),
 				uploadedBytes: 0,
@@ -2224,7 +2224,7 @@ describe("ClientTracker", () => {
 			// Make the announce request
 			const response = await tracker.announce({
 				trackerURL: meta.announce,
-				infoHash: meta.infoHash as SHA1Hash,
+				infoHash: meta.infoHash,
 				currentHost: toIPAddr("127.0.0.1"),
 				port: toPort(6881),
 				uploadedBytes: 0,
@@ -2268,7 +2268,7 @@ describe("ClientTracker", () => {
 			// First announce as started
 			await tracker.announce({
 				trackerURL: meta.announce,
-				infoHash: meta.infoHash as SHA1Hash,
+				infoHash: meta.infoHash,
 				currentHost: toIPAddr("127.0.0.1"),
 				port: toPort(6881),
 				uploadedBytes: 0,
@@ -2280,7 +2280,7 @@ describe("ClientTracker", () => {
 			// Then announce as completed (simulating finished download)
 			const response = await tracker.announce({
 				trackerURL: meta.announce,
-				infoHash: meta.infoHash as SHA1Hash,
+				infoHash: meta.infoHash,
 				currentHost: toIPAddr("127.0.0.1"),
 				port: toPort(6881),
 				uploadedBytes: 0,
@@ -2312,7 +2312,7 @@ describe("ClientTracker", () => {
 
 			await tracker.announce({
 				trackerURL: meta.announce,
-				infoHash: meta.infoHash as SHA1Hash,
+				infoHash: meta.infoHash,
 				currentHost: toIPAddr("127.0.0.1"),
 				port: toPort(6881),
 				uploadedBytes: 0,
@@ -2351,7 +2351,7 @@ describe("ClientTracker", () => {
 
 			const response = await tracker.announce({
 				trackerURL: meta.announce,
-				infoHash: meta.infoHash as SHA1Hash,
+				infoHash: meta.infoHash,
 				currentHost: toIPAddr("127.0.0.1"),
 				port: toPort(6881),
 				uploadedBytes: 0,

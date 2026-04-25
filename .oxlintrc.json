@@ -4,7 +4,25 @@
 	"categories": {
 		"correctness": "error"
 	},
-	"rules": {},
+	"rules": {
+		"typescript/no-floating-promises": "error",
+		"typescript/no-misused-promises": "error",
+		"typescript/await-thenable": "error",
+		"typescript/no-unsafe-argument": "error",
+		"typescript/no-unsafe-assignment": "error",
+		"typescript/no-unsafe-call": "error",
+		"typescript/no-unsafe-return": "error",
+		"typescript/no-unsafe-member-access": "error",
+		"typescript/no-unnecessary-type-assertion": "warn",
+		"typescript/no-unnecessary-condition": "warn",
+		"typescript/prefer-nullish-coalescing": "warn",
+		"typescript/prefer-optional-chain": "warn",
+		"typescript/switch-exhaustiveness-check": "error"
+	},
+	"options": {
+		"typeAware": true,
+		"typeCheck": true
+	},
 	"env": {
 		"builtin": true
 	}
