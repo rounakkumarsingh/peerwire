@@ -5,17 +5,26 @@
 	"module": "index.ts",
 	"scripts": {
 		"test": "bun test",
-		"lint": "oxlint",
-		"lint:fix": "oxlint --fix",
-		"fmt": "oxfmt",
-		"fmt:check": "oxfmt --check"
+		"lint": "oxlint .",
+		"lint:fix": "oxlint --fix .",
+		"format": "oxfmt --write .",
+		"format:check": "oxfmt --check .",
+		"prepare": "husky"
 	},
 	"devDependencies": {
 		"@types/bun": "latest",
+		"husky": "^9.1.7",
+		"lint-staged": "^16.4.0",
 		"oxfmt": "^0.46.0",
 		"oxlint": "^1.61.0"
 	},
 	"peerDependencies": {
 		"typescript": "^5.9.3"
+	},
+	"lint-staged": {
+		"*.{js,jsx,ts,tsx}": [
+			"bunx oxfmt --write",
+			"bunx oxlint"
+		]
 	}
 }
