@@ -1,7 +1,7 @@
 import type { SHA1Hash, TorrentMetadata } from "../torrent/metadata";
 import type { TrackerPeer } from "../tracker/types";
 import { toUint8Array } from "../utils/toUint8Array";
-import { parsePeerMessage, PeerMessageType, type PeerMessage } from "./messages";
+import { createPeerMessage, parsePeerMessage, PeerMessageType, type PeerMessage } from "./messages";
 
 type PeerWireSocketData = { peerWire?: PeerWireConnection };
 
@@ -456,5 +456,201 @@ export class PeerWireConnection {
 
 	handshakePacket(): Buffer {
 		return PeerWireConnection.buildHandshake(this.infoHash, this.peerId);
+	}
+
+	// ============================================================================
+	// Outbound Message Methods
+	// ============================================================================
+
+	/**
+	 * Send a choke message to the peer.
+	 * Indicates we are choking them and will not respond to their requests.
+	 */
+	sendChoke(): void {
+		const message = createPeerMessage({ type: PeerMessageType.Choke });
+		this.socket.write(message);
+		this.state.hasChokedPeer = true;
+		debug(`[Peer ${this.peer.host}:${this.peer.port}] Sent: Choke`);
+	}
+
+	/**
+	 * Send an unchoke message to the peer.
+	 * Indicates we are willing to upload to them.
+	 */
+	sendUnchoke(): void {
+		const message = createPeerMessage({ type: PeerMessageType.Unchoke });
+		this.socket.write(message);
+		this.state.hasChokedPeer = false;
+		debug(`[Peer ${this.peer.host}:${this.peer.port}] Sent: Unchoke`);
+	}
+
+	/**
+	 * Send an interested message to the peer.
+	 * Indicates we want to download pieces from them.
+	 */
+	sendInterested(): void {
+		const message = createPeerMessage({ type: PeerMessageType.Interested });
+		this.socket.write(message);
+		this.state.isInterestedInPeer = true;
+		debug(`[Peer ${this.peer.host}:${this.peer.port}] Sent: Interested`);
+	}
+
+	/**
+	 * Send a not interested message to the peer.
+	 * Indicates we don't want to download from them right now.
+	 */
+	sendNotInterested(): void {
+		const message = createPeerMessage({ type: PeerMessageType.NotInterested });
+		this.socket.write(message);
+		this.state.isInterestedInPeer = false;
+		debug(`[Peer ${this.peer.host}:${this.peer.port}] Sent: NotInterested`);
+	}
+
+	/**
+	 * Send a have message to the peer.
+	 * Notifies the peer that we have completed downloading a piece.
+	 *
+	 * @param index - The piece index we have completed
+	 */
+	sendHave(index: number): void {
+		const message = createPeerMessage({ type: PeerMessageType.Have, index });
+		this.socket.write(message);
+		debug(`[Peer ${this.peer.host}:${this.peer.port}] Sent: Have(${index})`);
+	}
+
+	/**
+	 * Send our bitfield to the peer.
+	 * Typically sent immediately after handshake to show which pieces we have.
+	 *
+	 * @param bitfield - Bitfield where each bit represents a piece (1 = have, 0 = don't have)
+	 */
+	sendBitfield(bitfield: Uint8Array): void {
+		const message = createPeerMessage({ type: PeerMessageType.Bitfield, bitfield });
+		this.socket.write(message);
+		debug(
+			`[Peer ${this.peer.host}:${this.peer.port}] Sent: Bitfield(${bitfield.length} bytes)`,
+		);
+	}
+
+	/**
+	 * Send a request message to the peer.
+	 * Requests a specific block of a piece.
+	 *
+	 * @param index - The piece index
+	 * @param begin - The byte offset within the piece
+	 * @param length - The number of bytes requested (typically 16KB = 16384)
+	 */
+	sendRequest(index: number, begin: number, length: number): void {
+		const message = createPeerMessage({
+			type: PeerMessageType.Request,
+			index,
+			begin,
+			length,
+		});
+		this.socket.write(message);
+		debug(
+			`[Peer ${this.peer.host}:${this.peer.port}] Sent: Request(piece=${index}, begin=${begin}, length=${length})`,
+		);
+	}
+
+	/**
+	 * Send a piece message to the peer.
+	 * Used when seeding/uploading to fulfill a peer's request.
+	 *
+	 * @param index - The piece index
+	 * @param begin - The byte offset within the piece
+	 * @param block - The block data to send
+	 */
+	sendPiece(index: number, begin: number, block: Uint8Array): void {
+		const message = createPeerMessage({
+			type: PeerMessageType.Piece,
+			index,
+			begin,
+			block,
+		});
+		this.socket.write(message);
+		debug(
+			`[Peer ${this.peer.host}:${this.peer.port}] Sent: Piece(piece=${index}, begin=${begin}, length=${block.length})`,
+		);
+	}
+
+	/**
+	 * Send a cancel message to the peer.
+	 * Cancels a previously sent request.
+	 *
+	 * @param index - The piece index
+	 * @param begin - The byte offset within the piece
+	 * @param length - The number of bytes in the original request
+	 */
+	sendCancel(index: number, begin: number, length: number): void {
+		const message = createPeerMessage({
+			type: PeerMessageType.Cancel,
+			index,
+			begin,
+			length,
+		});
+		this.socket.write(message);
+		debug(
+			`[Peer ${this.peer.host}:${this.peer.port}] Sent: Cancel(piece=${index}, begin=${begin}, length=${length})`,
+		);
+	}
+
+	/**
+	 * Send a port message to the peer.
+	 * Indicates the port we're listening on for DHT/peer discovery.
+	 *
+	 * @param port - The listen port number
+	 */
+	sendPort(port: number): void {
+		const message = createPeerMessage({ type: PeerMessageType.Port, port });
+		this.socket.write(message);
+		debug(`[Peer ${this.peer.host}:${this.peer.port}] Sent: Port(${port})`);
+	}
+
+	/**
+	 * Send a keep-alive message to the peer.
+	 * Keeps the connection alive when there's no other activity.
+	 * Should be sent every ~2 minutes of inactivity.
+	 */
+	sendKeepAlive(): void {
+		const message = createPeerMessage({ type: PeerMessageType.KeepAlive });
+		this.socket.write(message);
+		debug(`[Peer ${this.peer.host}:${this.peer.port}] Sent: KeepAlive`);
+	}
+
+	// ============================================================================
+	// Peer State Query Methods
+	// ============================================================================
+
+	/**
+	 * Check if the peer has a specific piece.
+	 *
+	 * @param pieceIndex - The piece index to check
+	 * @returns true if the peer has this piece, false otherwise
+	 */
+	hasPiece(pieceIndex: number): boolean {
+		const byteIndex = Math.floor(pieceIndex / 8);
+		if (byteIndex >= this.peerBitfield.length) {
+			return false;
+		}
+		const bitIndex = pieceIndex % 8;
+		const bitMask = 1 << (7 - bitIndex);
+		return (this.peerBitfield[byteIndex]! & bitMask) !== 0;
+	}
+
+	/**
+	 * Get the peer's complete bitfield.
+	 * Note: this is a copy - modifications won't affect the internal state.
+	 */
+	getPeerBitfield(): Uint8Array {
+		return new Uint8Array(this.peerBitfield);
+	}
+
+	/**
+	 * Close the peer connection gracefully.
+	 */
+	close(): void {
+		this.socket.end();
+		debug(`[Peer ${this.peer.host}:${this.peer.port}] Connection closed`);
 	}
 }
