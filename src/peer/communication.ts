@@ -288,7 +288,6 @@ export class PeerWireConnection {
 	}
 
 	private processMessage(message: PeerMessage): void {
-		// TODO: Implement message processing logic based on message type
 		debug("[Message Handler] Processing message:", message);
 		switch (message.type) {
 			case PeerMessageType.Choke:
@@ -306,9 +305,19 @@ export class PeerWireConnection {
 				this.state.isPeerInterestedInUs = false;
 				break;
 
-			case PeerMessageType.Have:
-				this.peerBitfield[message.index] = 1;
+			case PeerMessageType.Have: {
+				// BitTorrent bitfields are packed arrays of BITS, not bytes
+				// Each byte contains 8 piece flags (MSB = piece 0 of that byte)
+				const pieceIndex = message.index;
+				const byteIndex = Math.floor(pieceIndex / 8);
+				const bitIndex = pieceIndex % 8;
+				const bitMask = 1 << (7 - bitIndex); // MSB-first order per BitTorrent spec
+
+				if (byteIndex < this.peerBitfield.length) {
+					this.peerBitfield[byteIndex]! |= bitMask;
+				}
 				break;
+			}
 			case PeerMessageType.Bitfield:
 				this.peerBitfield = message.bitfield;
 				break;
