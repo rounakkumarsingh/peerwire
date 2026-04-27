@@ -4,6 +4,10 @@ import { toUint8Array } from "../utils/toUint8Array";
 import { createPeerMessage, parsePeerMessage, PeerMessageType, type PeerMessage } from "./messages";
 
 type PeerWireSocketData = { peerWire?: PeerWireConnection };
+type PeerPieceHandler = (pieceIndex: number, pieceOffset: number, pieceData: Uint8Array) => void;
+type PeerCancelHandler = (pieceIndex: number, pieceOffset: number, pieceLength: number) => void;
+type PeerWireEvent = "close" | "error";
+type PeerWireEventCallback = (error?: Error) => void;
 
 // BitTorrent handshake constants
 const HANDSHAKE_PROTOCOL_LEN = 19;
@@ -16,6 +20,8 @@ const HANDSHAKE_TOTAL_LEN =
 	HANDSHAKE_RESERVED_LEN +
 	HANDSHAKE_INFOHASH_LEN +
 	HANDSHAKE_PEERID_LEN;
+const READ_BUFFER_CAPACITY = 64 * 1024;
+const MAX_PEER_MESSAGE_LENGTH = READ_BUFFER_CAPACITY - 4;
 
 const BT_PROTOCOL_STRING = "BitTorrent protocol";
 
@@ -41,15 +47,15 @@ const debug = (...args: unknown[]) => {
  * operation would exceed available space. It handles wrap-around automatically
  * for both read and write operations.
  */
-class ReadBuffer {
+export class ReadBuffer {
 	/** The underlying Uint8Array storage for the ring buffer (64 KiB capacity) */
-	private buffer = new Uint8Array(64 * 1024); // 64 KiB
+	private buffer = new Uint8Array(READ_BUFFER_CAPACITY);
 	/** Current read position in the buffer */
 	head = 0;
 	/** Current write position in the buffer */
 	tail = 0;
 	/** Number of bytes currently stored in the buffer */
-	size = 0;
+	private size = 0;
 
 	/**
 	 * Appends a chunk of data to the ring buffer.
@@ -176,17 +182,22 @@ export class PeerWireConnection {
 	private peerBitfield: Uint8Array;
 
 	private readBuffer: ReadBuffer = new ReadBuffer();
+	private closed = false;
+	private readonly eventCallbacks: Record<PeerWireEvent, PeerWireEventCallback[]> = {
+		close: [],
+		error: [],
+	};
 
-	readonly handlePiece: (pieceIndex: number, pieceOffset: number, pieceData: Uint8Array) => void;
-	readonly handleCancel: (pieceIndex: number, pieceOffset: number, pieceLength: number) => void;
+	readonly handlePiece: PeerPieceHandler;
+	readonly handleCancel: PeerCancelHandler;
 	private constructor(
 		peer: TrackerPeer,
 		infoHash: SHA1Hash,
 		peerId: SHA1Hash,
 		socket: Bun.Socket<PeerWireSocketData>,
 		torrentMetadata: TorrentMetadata,
-		handlePiece: (pieceIndex: number, pieceOffset: number, pieceData: Uint8Array) => void,
-		handleCancel: (pieceIndex: number, pieceOffset: number, pieceLength: number) => void,
+		handlePiece: PeerPieceHandler,
+		handleCancel: PeerCancelHandler,
 	) {
 		this.peer = peer;
 		this.infoHash = infoHash;
@@ -197,6 +208,39 @@ export class PeerWireConnection {
 		this.readBuffer = new ReadBuffer();
 		this.handlePiece = handlePiece;
 		this.handleCancel = handleCancel;
+	}
+
+	get isClosed(): boolean {
+		return this.closed;
+	}
+
+	on(event: PeerWireEvent, callback: PeerWireEventCallback): void {
+		this.eventCallbacks[event].push(callback);
+	}
+
+	private emit(event: PeerWireEvent, error?: Error): void {
+		for (const callback of this.eventCallbacks[event]) {
+			callback(error);
+		}
+	}
+
+	private markClosed(error?: Error): void {
+		if (this.closed) {
+			return;
+		}
+		this.closed = true;
+		this.emit("close", error);
+	}
+
+	private closeWithError(error: Error): void {
+		this.emit("error", error);
+		this.socket.end();
+		this.markClosed(error);
+	}
+
+	private closeConnection(error?: Error): void {
+		this.socket.end();
+		this.markClosed(error);
 	}
 
 	private static buildHandshake(infoHash: SHA1Hash, peerId: SHA1Hash): Buffer {
@@ -277,11 +321,10 @@ export class PeerWireConnection {
 					processHandshake(instance);
 					socket.reload({ socket: instance.createMessageHandler() });
 				} catch (error) {
-					console.error(
-						"[Handshake Handler] Handshake failed:",
-						error instanceof Error ? error.message : error,
-					);
-					socket.end();
+					const err =
+						error instanceof Error ? error : new Error("Unknown handshake error");
+					console.error("[Handshake Handler] Handshake failed:", err.message);
+					instance.closeWithError(err);
 				}
 			},
 		};
@@ -324,6 +367,7 @@ export class PeerWireConnection {
 			case PeerMessageType.Request:
 				if (!(this.state.isPeerInterestedInUs && !this.state.hasChokedPeer)) {
 					debug("[Message Handler] Peer not interested or choked, ignoring request");
+					return;
 				}
 				debug(
 					"[Message Handler] Request for piece",
@@ -335,6 +379,7 @@ export class PeerWireConnection {
 			case PeerMessageType.Piece: {
 				if (!(this.state.isPeerInterestedInUs && !this.state.hasChokedPeer)) {
 					debug("[Message Handler] Peer not interested or choked, ignoring piece");
+					return;
 				}
 				const pieceIndex = message.index;
 				const pieceOffset = message.begin;
@@ -344,7 +389,8 @@ export class PeerWireConnection {
 			}
 			case PeerMessageType.Cancel: {
 				if (!(this.state.isPeerInterestedInUs && !this.state.hasChokedPeer)) {
-					debug("[Message Handler] Peer not interested or choked, ignoring piece");
+					debug("[Message Handler] Peer not interested or choked, ignoring cancel");
+					return;
 				}
 				const pieceIndex = message.index;
 				const pieceOffset = message.begin;
@@ -369,47 +415,60 @@ export class PeerWireConnection {
 					throw new Error("PeerWireCommunication instance not found in socket data");
 				}
 
-				// Append incoming data to the read buffer
-				instance.readBuffer.append(data);
+				try {
+					instance.readBuffer.append(data);
+				} catch (error) {
+					const err =
+						error instanceof Error ? error : new Error("Unknown message buffer error");
+					console.error("[Message Handler] Failed to buffer data:", err.message);
+					instance.closeWithError(err);
+					return;
+				}
 				debug("[Message Handler] Received data, length:", data.length);
 
-				// Process messages while we have enough data
-				// Need at least 4 bytes to read the length prefix
-				if (instance.readBuffer.length() < 4) {
-					return; // Wait for more data
-				}
+				while (instance.readBuffer.length() >= 4) {
+					// Peek at the length prefix without draining
+					const lengthPrefix = instance.readBuffer.peek(4);
+					const messageLength = new DataView(
+						lengthPrefix.buffer,
+						lengthPrefix.byteOffset,
+						4,
+					).getUint32(0, false);
 
-				// Peek at the length prefix without draining
-				const lengthPrefix = instance.readBuffer.peek(4);
-				const messageLength = new DataView(
-					lengthPrefix.buffer,
-					lengthPrefix.byteOffset,
-					4,
-				).getUint32(0, false);
+					if (messageLength > MAX_PEER_MESSAGE_LENGTH) {
+						const error = new Error(
+							`Invalid message length: ${messageLength} exceeds maximum ${MAX_PEER_MESSAGE_LENGTH}`,
+						);
+						console.error(`[Message Handler] ${error.message}`);
+						instance.closeWithError(error);
+						return;
+					}
 
-				// Check if we have enough data for the complete message
-				// Message = 4 bytes length prefix + messageLength bytes payload
-				const totalMessageSize = 4 + messageLength;
-				if (instance.readBuffer.length() < totalMessageSize) {
-					return; // Wait for more data
-				}
+					// Check if we have enough data for the complete message
+					// Message = 4 bytes length prefix + messageLength bytes payload
+					const totalMessageSize = 4 + messageLength;
+					if (instance.readBuffer.length() < totalMessageSize) {
+						return; // Wait for more data
+					}
 
-				// Drain the complete message (length prefix + payload)
-				const messageBytes = instance.readBuffer.drain(totalMessageSize);
+					// Drain the complete message (length prefix + payload)
+					const messageBytes = instance.readBuffer.drain(totalMessageSize);
 
-				try {
-					// Parse the message using parsePeerMessage
-					const parsedMessage = parsePeerMessage(messageBytes);
+					try {
+						// Parse the message using parsePeerMessage
+						const parsedMessage = parsePeerMessage(messageBytes);
 
-					// Process the parsed message
-					instance.processMessage(parsedMessage);
-				} catch (error) {
-					console.error(
-						"[Message Handler] Failed to parse message:",
-						error instanceof Error ? error.message : error,
-					);
-					socket.end();
-					return;
+						// Process the parsed message
+						instance.processMessage(parsedMessage);
+					} catch (error) {
+						const err =
+							error instanceof Error
+								? error
+								: new Error("Unknown message parsing error");
+						console.error("[Message Handler] Failed to parse message:", err.message);
+						instance.closeWithError(err);
+						return;
+					}
 				}
 			},
 		};
@@ -420,6 +479,8 @@ export class PeerWireConnection {
 		infoHash: SHA1Hash,
 		peerId: SHA1Hash,
 		torrentMetadata: TorrentMetadata,
+		handlePiece: PeerPieceHandler = () => {},
+		handleCancel: PeerCancelHandler = () => {},
 	): Promise<PeerWireConnection> {
 		const socket = await Bun.connect<PeerWireSocketData>({
 			hostname: peer.host,
@@ -438,6 +499,25 @@ export class PeerWireConnection {
 					// This initial handler will only process the handshake response. Once the handshake is complete, it will transition to the bitfield handler, and then to the message handler.
 					instance.createHandshakeHandler().data(socket, data);
 				},
+				close: (socket, error) => {
+					const instance = socket.data.peerWire;
+					if (instance !== undefined) {
+						instance.markClosed(error);
+					}
+				},
+				end: (socket) => {
+					const instance = socket.data.peerWire;
+					if (instance !== undefined) {
+						instance.markClosed();
+					}
+				},
+				error: (socket, error) => {
+					const instance = socket.data.peerWire;
+					if (instance !== undefined) {
+						instance.emit("error", error);
+						instance.markClosed(error);
+					}
+				},
 			},
 		});
 
@@ -447,8 +527,8 @@ export class PeerWireConnection {
 			peerId,
 			socket,
 			torrentMetadata,
-			() => {},
-			() => {},
+			handlePiece,
+			handleCancel,
 		);
 		instance.socket.data = { peerWire: instance };
 		return instance;
@@ -629,6 +709,9 @@ export class PeerWireConnection {
 	 * @returns true if the peer has this piece, false otherwise
 	 */
 	hasPiece(pieceIndex: number): boolean {
+		if (pieceIndex < 0) {
+			return false;
+		}
 		const byteIndex = Math.floor(pieceIndex / 8);
 		if (byteIndex >= this.peerBitfield.length) {
 			return false;
@@ -650,7 +733,7 @@ export class PeerWireConnection {
 	 * Close the peer connection gracefully.
 	 */
 	close(): void {
-		this.socket.end();
+		this.closeConnection();
 		debug(`[Peer ${this.peer.host}:${this.peer.port}] Connection closed`);
 	}
 }

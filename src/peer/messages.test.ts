@@ -349,7 +349,7 @@ describe("parsePeerMessage", () => {
 			new DataView(buffer.buffer).setUint32(0, 8, false); // length = 8 (too short, need at least 9)
 			buffer[4] = PeerMessageType.Piece;
 			expect(() => parsePeerMessage(buffer)).toThrow(
-				"Invalid request message: expected length >= 9 but got 8",
+				"Invalid piece message: expected length >= 9 but got 8",
 			);
 		});
 
@@ -365,7 +365,7 @@ describe("parsePeerMessage", () => {
 			buffer[10] = 0;
 			buffer[11] = 0;
 			expect(() => parsePeerMessage(buffer)).toThrow(
-				"Invalid request message: expected length >= 9 but got 8",
+				"Invalid piece message: expected length >= 9 but got 8",
 			);
 		});
 
