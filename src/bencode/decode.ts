@@ -1,7 +1,12 @@
 const COLON = ":".charCodeAt(0);
 const ZERO = "0".charCodeAt(0);
 const NINE = "9".charCodeAt(0);
+const MINUS = "-".charCodeAt(0);
+const LOWERCASE_I = "i".charCodeAt(0);
+const LOWERCASE_E = "e".charCodeAt(0);
+
 const MAX_STRING_LENGTH = 25 * 1024 * 1024;
+
 function parseNumber(input: Uint8Array, offset: number, end?: number): bigint {
 	let num = BigInt(0);
 	const endCondition = (i: number, input: Uint8Array) => {
@@ -14,11 +19,18 @@ function parseNumber(input: Uint8Array, offset: number, end?: number): bigint {
 	};
 	for (let i = offset; endCondition(i, input); i++) {
 		const byte = input.at(i);
-		if (byte === undefined || byte < ZERO || byte > NINE) {
-			throw new Error("Invalid length");
+		if (byte === MINUS && i === offset) {
+			continue;
+		} else if (byte === undefined || byte < ZERO || byte > NINE) {
+			throw new Error("Invalid number to read");
 		}
 		const digit = byte - ZERO + 0;
 		num = num * 10n + BigInt(digit);
+	}
+	const isNegative = input.at(offset) === MINUS;
+	if (isNegative) {
+		if (num === 0n) throw new Error("-0 is not an accepted number");
+		num *= -1n;
 	}
 	return num;
 }
@@ -62,5 +74,34 @@ export function decodeBencodedString(
 	return {
 		value: content,
 		nextOffset: end,
+	};
+}
+
+export function decodeBencodedInteger(
+	input: Uint8Array,
+	offset: number,
+): { value: bigint; nextOffset: number } {
+	if (input.at(offset) !== LOWERCASE_I) {
+		throw new Error("expected 'i'");
+	}
+	const numberEnd = input.indexOf(LOWERCASE_E);
+	if (numberEnd <= offset + 1) {
+		// handles case where e is not available or just ie
+		throw new Error(
+			numberEnd === offset + 1 ? "expected number" : "expected 'e'",
+		);
+	}
+	const number = parseNumber(input, offset + 1, numberEnd);
+	if (
+		(input.at(offset + 1) === ZERO && numberEnd - offset > 2) ||
+		(input.at(offset + 1) === MINUS &&
+			input.at(offset + 2) === ZERO &&
+			numberEnd - offset > 3)
+	) {
+		throw new Error("No leading zeros");
+	}
+	return {
+		value: number,
+		nextOffset: numberEnd + 1,
 	};
 }
