@@ -9,7 +9,7 @@ const LOWERCASE_D = "d".charCodeAt(0);
 
 const MAX_STRING_LENGTH = 25 * 1024 * 1024;
 
-type BencodeValue =
+export type BencodeValue =
 	| Uint8Array
 	| bigint
 	| BencodeValue[]
