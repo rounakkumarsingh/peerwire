@@ -41,6 +41,25 @@ describe("multiple files torrent", () => {
 		expect(info.name).toBe("peerwire");
 		expect(info.pieceLength).toBe(32768 as PieceData);
 		expect(info.files).toBeArrayOfSize(15);
+		expect(toHex(meta.infoHash)).toBe(
+			"645f3a89807b3b02ee4f0e6c722dad8962bb243b",
+		);
+		expect(info.pieces.length).toBe(7);
+	});
+});
+
+describe("error handling", () => {
+	test("throws when file does not exist", async () => {
+		const torrentPath = path.join(
+			import.meta.dir,
+			"test-data/non-existent.torrent",
+		);
+		expect(async () => await parseTorrentFile(torrentPath)).toThrow();
+	});
+
+	test("throws when file is not a valid torrent (e.g., package.json)", async () => {
+		const filePath = path.join(import.meta.dir, "../../package.json");
+		expect(async () => await parseTorrentFile(filePath)).toThrow();
 	});
 });
 
