@@ -23,8 +23,25 @@ function expectKey<T extends BencodeValue>(
 	key: string,
 	guard: TypeGuard<T>,
 ): T {
-	const keyBytes = toUint8Array(key);
-	const value = dict.get(keyBytes);
+	const keyBytes = typeof key === "string" ? toUint8Array(key) : key;
+
+	let value: BencodeValue | undefined;
+	for (const [k, v] of dict) {
+		if (k.length === keyBytes.length) {
+			let equal = true;
+			for (let i = 0; i < k.length; i++) {
+				if (k[i] !== keyBytes[i]) {
+					equal = false;
+					break;
+				}
+			}
+			if (equal) {
+				value = v;
+				break;
+			}
+		}
+	}
+
 	if (value === undefined) {
 		throw new Error(`Invalid torrent: missing '${key}'`);
 	}
@@ -47,8 +64,24 @@ function optKey<T extends BencodeValue>(
 	key: string,
 	guard: TypeGuard<T>,
 ): T | undefined {
-	const keyBytes = toUint8Array(key);
-	const value = dict.get(keyBytes);
+	const keyBytes = typeof key === "string" ? toUint8Array(key) : key;
+
+	let value: BencodeValue | undefined;
+	for (const [k, v] of dict) {
+		if (k.length === keyBytes.length) {
+			let equal = true;
+			for (let i = 0; i < k.length; i++) {
+				if (k[i] !== keyBytes[i]) {
+					equal = false;
+					break;
+				}
+			}
+			if (equal) {
+				value = v;
+				break;
+			}
+		}
+	}
 	if (value === undefined) {
 		return undefined;
 	}
@@ -151,7 +184,9 @@ export async function parseTorrentFile(
 	const optEncoding = optKey(dict, "encoding", isUint8Array);
 	const optPrivate = optKey(info, "private", isBigInt);
 
-	if (info.has(toUint8Array("name"))) {
+	const HAS_LENGTH = optKey(info, "length", isBigInt) !== undefined;
+	const HAS_FILES = optKey(info, "files", isArray) !== undefined;
+	if (HAS_LENGTH && !HAS_FILES) {
 		const name = decodeText(expectKey(info, "name", isUint8Array));
 		const length = expectKey(info, "length", isBigInt);
 		const optMd5sum = optKey(info, "md5sum", isUint8Array);
@@ -213,7 +248,7 @@ export async function parseTorrentFile(
 		}
 
 		return metadata;
-	} else if (info.has(toUint8Array("files"))) {
+	} else if (HAS_FILES && !HAS_LENGTH) {
 		const name = decodeText(expectKey(info, "name", isUint8Array));
 		const files = expectKey(info, "files", isArray);
 		const filesList: TorrentMetadataFileEntry[] = [];
@@ -302,7 +337,7 @@ export async function parseTorrentFile(
 	} else {
 		throw new Error(
 			"Single file torrent files must have 'name' field in info field and" +
-				"Multiple file torrent files must have 'files' field in info 'field'",
+				" Multiple file torrent files must have 'files' field in info 'field'",
 		);
 	}
 }
