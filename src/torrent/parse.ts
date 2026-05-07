@@ -1,5 +1,10 @@
 import type { Encoding } from "bun";
-import { type BencodeValue, decodeBencodedDictionary } from "../bencode/decode";
+import {
+	type BencodeValue,
+	decodeBencodedDictionary,
+	decodeBencodedItem,
+	decodeBencodedString,
+} from "../bencode/decode";
 import { toUint8Array } from "../utils/toUint8Array";
 import type {
 	MD5Hex,
@@ -94,11 +99,40 @@ function parsePieces(pieces: Uint8Array): SHA1Hash[] {
 	return hashes;
 }
 
+function getInfoRange(input: Uint8Array): { start: number; end: number } {
+	let currOffset = 1; // skip 'd'
+	const LOWERCASE_E = "e".charCodeAt(0);
+	while (currOffset < input.length && input[currOffset] !== LOWERCASE_E) {
+		const { value: key, nextOffset: afterKeyOffset } = decodeBencodedString(
+			input,
+			currOffset,
+		);
+		currOffset = afterKeyOffset;
+		const valueStart = currOffset;
+		const { nextOffset: afterValueOffset } = decodeBencodedItem(
+			input,
+			currOffset,
+		);
+		if (decodeText(key) === "info") {
+			return { start: valueStart, end: afterValueOffset };
+		}
+		currOffset = afterValueOffset;
+	}
+	throw new Error("info key not found");
+}
+
 export async function parseTorrentFile(
 	filePath: string | URL,
 ): Promise<TorrentMetadata> {
 	const file = Bun.file(filePath);
 	const bytes = await file.bytes();
+
+	const { start, end } = getInfoRange(bytes);
+	const infoBytes = bytes.slice(start, end);
+	const infoHashBuffer = new Bun.CryptoHasher("sha1")
+		.update(infoBytes)
+		.digest();
+	const infoHash = new Uint8Array(infoHashBuffer) as SHA1Hash;
 
 	const { value: dict } = decodeBencodedDictionary(bytes, 0);
 
@@ -140,6 +174,7 @@ export async function parseTorrentFile(
 		const metadata: TorrentMetadata = {
 			announce: announceURL as TrackerURL,
 			info: infoData,
+			infoHash,
 		};
 
 		if (optAnnounceList !== undefined) {
@@ -225,6 +260,7 @@ export async function parseTorrentFile(
 		const metadata: TorrentMetadata = {
 			announce: announceURL as TrackerURL,
 			info: infoData,
+			infoHash,
 		};
 
 		if (optAnnounceList) {

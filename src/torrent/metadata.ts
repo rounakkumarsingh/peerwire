@@ -3,6 +3,7 @@ export type TrackerURL = URL & { readonly __brand: "TrackerURL" };
 
 export interface TorrentMetadata {
 	info: TorrentMetadataMultipleFilesInfo | TorrentMetadataSingleFileInfo;
+	infoHash: SHA1Hash;
 	announce: TrackerURL;
 	announceList?: TrackerURL[][];
 	creationDate?: UnixTimestamp;
