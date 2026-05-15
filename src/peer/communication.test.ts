@@ -369,6 +369,10 @@ describe("PeerWireConnection", () => {
 					handlePiece,
 					handleCancel,
 				);
+				// State for receiving pieces
+				connected.state.isChokedByPeer = false;
+				connected.state.isInterestedInPeer = true;
+				// State for receiving requests/cancels
 				connected.state.hasChokedPeer = false;
 				connected.state.isPeerInterestedInUs = true;
 
@@ -656,11 +660,11 @@ describe("PeerWireConnection", () => {
 			expect(connection.hasPiece(1)).toBe(false);
 		});
 
-		test("piece calls the handlePiece callback", () => {
+		test("piece calls the handlePiece callback when interested and unchoked", () => {
 			const handlePiece = mock(() => {});
 			connection = makeConnection({ socket, handlePiece });
-			connection.state.hasChokedPeer = false;
-			connection.state.isPeerInterestedInUs = true;
+			connection.state.isChokedByPeer = false;
+			connection.state.isInterestedInPeer = true;
 			const block = bytes([0xde, 0xad, 0xbe, 0xef]);
 
 			feedMessage(connection, buildPieceMessage(3, 4096, block));
@@ -669,16 +673,39 @@ describe("PeerWireConnection", () => {
 			expect(handlePiece).toHaveBeenCalledWith(3, 4096, block);
 		});
 
-		test("piece callback is NOT invoked when peer is choked", () => {
+		test("piece callback is NOT invoked when choked by peer", () => {
 			const handlePiece = mock(() => {});
 			connection = makeConnection({ socket, handlePiece });
-			connection.state.hasChokedPeer = true;
-			connection.state.isPeerInterestedInUs = true;
+			connection.state.isChokedByPeer = true;
+			connection.state.isInterestedInPeer = true;
 
 			feedMessage(connection, buildPieceMessage(0, 0, bytes([0xde, 0xad, 0xbe, 0xef])));
 
 			expect(handlePiece).not.toHaveBeenCalled();
-			expect(socket.end).not.toHaveBeenCalled();
+		});
+
+		test("piece callback is NOT invoked when not interested", () => {
+			const handlePiece = mock(() => {});
+			connection = makeConnection({ socket, handlePiece });
+			connection.state.isChokedByPeer = false;
+			connection.state.isInterestedInPeer = false;
+
+			feedMessage(connection, buildPieceMessage(0, 0, bytes([0xde, 0xad, 0xbe, 0xef])));
+
+			expect(handlePiece).not.toHaveBeenCalled();
+		});
+
+		test("piece does not require isPeerInterestedInUs or hasChokedPeer", () => {
+			const handlePiece = mock(() => {});
+			connection = makeConnection({ socket, handlePiece });
+			connection.state.isChokedByPeer = false;
+			connection.state.isInterestedInPeer = true;
+			connection.state.hasChokedPeer = true;
+			connection.state.isPeerInterestedInUs = false;
+
+			feedMessage(connection, buildPieceMessage(0, 0, bytes([0xde, 0xad])));
+
+			expect(handlePiece).toHaveBeenCalledTimes(1);
 		});
 
 		test("request messages parse without closing the socket", () => {
@@ -709,8 +736,8 @@ describe("PeerWireConnection", () => {
 				throw new Error("Disk full");
 			});
 			connection = makeConnection({ socket, handlePiece });
-			connection.state.hasChokedPeer = false;
-			connection.state.isPeerInterestedInUs = true;
+			connection.state.isChokedByPeer = false;
+			connection.state.isInterestedInPeer = true;
 
 			feedMessage(connection, buildPieceMessage(0, 0, bytes([0xde, 0xad])));
 
