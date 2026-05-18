@@ -4,6 +4,11 @@ import { PeerWireConnection, ReadBuffer } from "./communication";
 import type { TrackerPeer } from "../tracker/types";
 import type { SHA1Hash, TorrentMetadata } from "../torrent/metadata";
 
+/**
+ * Mock representation of a Bun socket for testing purposes.
+ * Tracks outbound data in a mock write function and provides access
+ * to the PeerWireConnection instance attached to the socket data.
+ */
 type MockSocket = {
 	write: ReturnType<typeof mock>;
 	end: ReturnType<typeof mock>;
@@ -11,10 +16,17 @@ type MockSocket = {
 	data: { peerWire?: PeerWireConnection };
 };
 
+/**
+ * Interface for objects that can handle raw binary data from a socket.
+ * Used to extract the internal message handlers from the PeerWireConnection.
+ */
 type SocketDataHandler = {
 	data: (socket: MockSocket, data: Uint8Array) => void;
 };
 
+/**
+ * Options used to simulate the Bun.connect API.
+ */
 type ConnectOptions = {
 	hostname: TrackerPeer["host"];
 	port: TrackerPeer["port"];
@@ -31,18 +43,34 @@ type ConnectOptions = {
 const HANDSHAKE_TOTAL_LEN = 68;
 const BT_PROTOCOL_STRING = "BitTorrent protocol";
 
+/**
+ * Shorthand to create a Uint8Array from a numeric array.
+ */
 function bytes(values: number[]): Uint8Array {
 	return new Uint8Array(values);
 }
 
+/**
+ * Converts a 32-bit integer to a 4-byte Big-Endian array.
+ * Used for message lengths, piece indices, and offsets.
+ */
 function uint32Bytes(value: number): number[] {
 	return [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];
 }
 
+/**
+ * Converts a 16-bit integer to a 2-byte Big-Endian array.
+ * Used for Port messages.
+ */
 function uint16Bytes(value: number): number[] {
 	return [(value >>> 8) & 0xff, value & 0xff];
 }
 
+/**
+ * Constructs a standard BitTorrent peer message with a length prefix.
+ * @param type The message ID (e.g., PeerMessageType.Choke)
+ * @param payload The raw bytes to include after the type ID
+ */
 function buildMessage(type: number, payload: number[] | Uint8Array = []): Uint8Array {
 	const payloadBytes = payload instanceof Uint8Array ? payload : bytes(payload);
 	const length = 1 + payloadBytes.length;
@@ -54,12 +82,21 @@ function buildMessage(type: number, payload: number[] | Uint8Array = []): Uint8A
 	return buffer;
 }
 
+/**
+ * Constructs a 4-byte Keep-Alive message (all zeros).
+ */
 function buildKeepAlive(): Uint8Array {
 	const buffer = new Uint8Array(4);
 	new DataView(buffer.buffer).setUint32(0, 0, false);
 	return buffer;
 }
 
+/**
+ * Specifically constructs a Piece message with the required index and begin fields.
+ * @param index The piece index
+ * @param begin The byte offset within the piece
+ * @param blockData The actual block data bytes
+ */
 function buildPieceMessage(
 	index: number,
 	begin: number,
@@ -70,6 +107,10 @@ function buildPieceMessage(
 	return buildMessage(PeerMessageType.Piece, payload);
 }
 
+/**
+ * Concatenates multiple Uint8Array chunks into a single buffer.
+ * Useful for simulating TCP stream fragmentation or multi-message packets.
+ */
 function concatBytes(...chunks: Uint8Array[]): Uint8Array {
 	const result = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.length, 0));
 	let offset = 0;
@@ -80,10 +121,16 @@ function concatBytes(...chunks: Uint8Array[]): Uint8Array {
 	return result;
 }
 
+/**
+ * Generates a dummy 20-byte SHA1 hash for testing.
+ */
 function makeHash(seed: number): SHA1Hash {
 	return Uint8Array.from({ length: 20 }, (_, index) => (seed + index) & 0xff) as SHA1Hash;
 }
 
+/**
+ * Creates a mock TrackerPeer object pointing to localhost.
+ */
 function makePeer(): TrackerPeer {
 	return {
 		host: "127.0.0.1" as TrackerPeer["host"],
@@ -91,6 +138,9 @@ function makePeer(): TrackerPeer {
 	};
 }
 
+/**
+ * Generates mock TorrentMetadata with a fixed number of pieces.
+ */
 function makeMetadata(pieceCount = 32): TorrentMetadata {
 	return {
 		infoHash: makeHash(1),
@@ -104,6 +154,9 @@ function makeMetadata(pieceCount = 32): TorrentMetadata {
 	};
 }
 
+/**
+ * Creates a MockSocket that collects all outbound writes into an array.
+ */
 function makeSocket(writes: Uint8Array[] = []): MockSocket {
 	return {
 		write: mock((data: Uint8Array) => {
@@ -115,6 +168,9 @@ function makeSocket(writes: Uint8Array[] = []): MockSocket {
 	};
 }
 
+/**
+ * Instantiates a PeerWireConnection using mock dependencies for logic testing.
+ */
 function makeConnection(
 	options: {
 		socket?: MockSocket;
@@ -147,12 +203,19 @@ function makeConnection(
 	return connection;
 }
 
+/**
+ * Forces raw data into the connection's internal message handler.
+ * Simulates receiving data from a peer over the network.
+ */
 function feedMessage(connection: PeerWireConnection, data: Uint8Array): void {
 	(connection as unknown as { createMessageHandler: () => SocketDataHandler })
 		.createMessageHandler()
 		.data(connection.socket as unknown as MockSocket, data);
 }
 
+/**
+ * Asserts that a specific byte sequence was written to the mock socket.
+ */
 function expectWritten(writes: Uint8Array[], expected: Uint8Array): void {
 	expect(writes.length).toBe(1);
 	expect(Array.from(writes[0]!)).toEqual(Array.from(expected));
