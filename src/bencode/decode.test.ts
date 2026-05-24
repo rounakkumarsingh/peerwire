@@ -1,17 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { toUint8Array } from "../utils/toUint8Array";
 import {
+	type BencodeDecodedValue,
 	decodeBencodedDictionary,
 	decodeBencodedInteger,
 	decodeBencodedList,
 	decodeBencodedString,
 } from "./decode";
-
-type BencodeValue =
-	| Uint8Array
-	| bigint
-	| BencodeValue[]
-	| Map<Uint8Array, BencodeValue>;
 
 describe("bencoded strings", () => {
 	test("valid string", () => {
@@ -289,10 +284,10 @@ describe("test lists", () => {
 describe("bencoded dictionary", () => {
 	const toMap = (
 		obj: Record<string, unknown>,
-	): Map<Uint8Array, BencodeValue> => {
-		const map = new Map<Uint8Array, BencodeValue>();
+	): Map<Uint8Array, BencodeDecodedValue> => {
+		const map = new Map<Uint8Array, BencodeDecodedValue>();
 		for (const [key, value] of Object.entries(obj)) {
-			map.set(new TextEncoder().encode(key), value as BencodeValue);
+			map.set(new TextEncoder().encode(key), value as BencodeDecodedValue);
 		}
 		return map;
 	};
