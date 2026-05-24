@@ -210,6 +210,7 @@ function compareBytes(a: Uint8Array, b: Uint8Array): number {
 
 	for (let i = 0; i < minLen; i++) {
 		if (a[i] !== b[i]) {
+			// biome-ignore lint/style/noNonNullAssertion: i < min(|a|, |b|)
 			return a[i]! - b[i]!; // negative if a < b
 		}
 	}
