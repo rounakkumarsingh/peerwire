@@ -16,7 +16,7 @@ export type SHA1Hash = Uint8Array & { readonly __brand: "SHA1Hash" };
 export type PieceData = number & { readonly __brand: "PieceLength" };
 
 export interface TorrentMetadataFileInfo {
-	pieceLength: PieceData; // nominal piece size, usually power of 2. Current Best Practice -> <= 512kB
+	pieceLength: PieceData; // nominal piece size, usually power of 2. Current Best Practice -> <= 512KiB
 	pieces: SHA1Hash[]; // array of 20-byte SHA1 hashes
 	private?: boolean;
 }
