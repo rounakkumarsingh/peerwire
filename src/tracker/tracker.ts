@@ -228,12 +228,18 @@ export class ClientTracker {
 		return peers;
 	}
 
+	#get(
+		dict: Map<Uint8Array, BencodeDecodedValue>,
+		key: string,
+	): BencodeDecodedValue | undefined {
+		return dict.get(new TextEncoder().encode(key));
+	}
+
 	#expectInteger(
 		dict: Map<Uint8Array, BencodeDecodedValue>,
 		key: string,
 	): bigint {
-		const keyBytes = new TextEncoder().encode(key);
-		const val = dict.get(keyBytes);
+		const val = this.#get(dict, key);
 		if (val === undefined) {
 			throw new Error(`Tracker response missing '${key}'`);
 		}
@@ -247,8 +253,7 @@ export class ClientTracker {
 		dict: Map<Uint8Array, BencodeDecodedValue>,
 		key: string,
 	): bigint | undefined {
-		const keyBytes = new TextEncoder().encode(key);
-		const val = dict.get(keyBytes);
+		const val = this.#get(dict, key);
 		if (val === undefined) return undefined;
 		if (typeof val !== "bigint") {
 			throw new Error(`Tracker response '${key}' is not an integer`);
@@ -260,8 +265,7 @@ export class ClientTracker {
 		dict: Map<Uint8Array, BencodeDecodedValue>,
 		key: string,
 	): Uint8Array {
-		const keyBytes = new TextEncoder().encode(key);
-		const val = dict.get(keyBytes);
+		const val = this.#get(dict, key);
 		if (val === undefined) {
 			throw new Error(`Tracker response missing '${key}'`);
 		}
@@ -275,8 +279,7 @@ export class ClientTracker {
 		dict: Map<Uint8Array, BencodeDecodedValue>,
 		key: string,
 	): Uint8Array | undefined {
-		const keyBytes = new TextEncoder().encode(key);
-		const val = dict.get(keyBytes);
+		const val = this.#get(dict, key);
 		if (val === undefined) return undefined;
 		if (!(val instanceof Uint8Array)) {
 			throw new Error(`Tracker response '${key}' is not a bencoded string`);
@@ -288,8 +291,7 @@ export class ClientTracker {
 		dict: Map<Uint8Array, BencodeDecodedValue>,
 		key: string,
 	): string | undefined {
-		const keyBytes = new TextEncoder().encode(key);
-		const val = dict.get(keyBytes);
+		const val = this.#get(dict, key);
 		if (val === undefined) return undefined;
 		if (!(val instanceof Uint8Array)) {
 			throw new Error(`Tracker response '${key}' is not a bencoded string`);

@@ -1,7 +1,4 @@
-import { createPeerId, type PeerId } from "./types";
-
-export { createPeerId };
-export type { PeerId };
+import type { PeerId } from "./types";
 
 export function generatePeerId(): PeerId {
 	const bytes = new Uint8Array(20);

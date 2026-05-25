@@ -12,13 +12,15 @@ export type Hostname = string & { __brand: "hostname"; readonly: true };
 export function isHostname(value: string): value is Hostname {
 	if (!value || value.length > 253) return false;
 	const labels = value.split(".");
-	const isValidLength = labels.every(
-		(label) => label.length >= 1 && label.length <= 63,
+	const hostnameRegex =
+		/^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]))*$/;
+	return labels.every(
+		(label) =>
+			label.length >= 1 && label.length <= 63 && hostnameRegex.test(label),
 	);
-	if (!isValidLength) return false;
-	const hostnameRegex = /^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])$/;
-	return labels.every((label) => hostnameRegex.test(label));
 }
+
+// RFC 1123: allows labels starting/ending with alphanumeric chars, hyphens in middle, max 63 chars per label
 
 export function isPort(port: number): port is Port {
 	return 0 <= port && port <= 65535;
