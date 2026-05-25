@@ -9,6 +9,7 @@ export function isIPAddr(ip: string): ip is IPAddr {
 
 export type Hostname = string & { __brand: "hostname"; readonly: true };
 
+// RFC 1123: allows labels starting/ending with alphanumeric chars, hyphens in middle, max 63 chars per label
 export function isHostname(value: string): value is Hostname {
 	if (!value || value.length > 253) return false;
 	const labels = value.split(".");
@@ -19,8 +20,6 @@ export function isHostname(value: string): value is Hostname {
 			label.length >= 1 && label.length <= 63 && hostnameRegex.test(label),
 	);
 }
-
-// RFC 1123: allows labels starting/ending with alphanumeric chars, hyphens in middle, max 63 chars per label
 
 export function isPort(port: number): port is Port {
 	return 0 <= port && port <= 65535;
