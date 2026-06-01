@@ -18,6 +18,26 @@ import {
 } from "./types";
 import { encodePeerId, generatePeerId, percentEncodeBytes } from "./utils";
 
+/** Timeout for tracker HTTP requests in milliseconds */
+const TRACKER_TIMEOUT_MS = 30_000;
+
+/** Number of bits per byte for port calculations */
+const BITS_PER_BYTE = 8;
+
+/** Size of compact peer entry in bytes (4 bytes IP + 2 bytes port) */
+const COMPACT_PEER_SIZE = 6;
+
+/** Default User-Agent for tracker requests */
+const DEFAULT_USER_AGENT = "PeerWire/0.1.0";
+
+/** Shared text encoder/decoder for efficiency */
+const TEXT_ENCODER = new TextEncoder();
+const TEXT_DECODER = new TextDecoder();
+
+/**
+ * ClientTracker manages communication with BitTorrent HTTP trackers.
+ * Handles announce requests and parses tracker responses to discover peers.
+ */
 export class ClientTracker {
 	readonly peerId: PeerId;
 	private _lastResponse: TrackerResponse | null = null;
@@ -31,6 +51,13 @@ export class ClientTracker {
 		return this._lastResponse;
 	}
 
+	/**
+	 * Send an announce request to a tracker to register this peer and discover other peers.
+	 *
+	 * @param params - Announce request parameters
+	 * @returns Tracker response containing peer list and interval information
+	 * @throws Error if the tracker request fails
+	 */
 	async announce(params: {
 		trackerURL: URL;
 		infoHash: SHA1Hash;
@@ -44,6 +71,8 @@ export class ClientTracker {
 		noPeerId?: boolean;
 		numwant?: number;
 		key?: string;
+		/** Enable verbose logging for debugging */
+		verbose?: boolean;
 	}) {
 		const {
 			trackerURL,
@@ -58,48 +87,54 @@ export class ClientTracker {
 			noPeerId = false,
 			numwant,
 			key,
+			verbose = false,
 		} = params;
 
+		// Validate port before making request
+		if (!isPort(port)) {
+			throw new Error(`Invalid port: ${port}`);
+		}
+
+		// Prefetch DNS for faster connection
+		try {
+			dns.prefetch(trackerURL.host);
+		} catch {
+			// Non-fatal, just a performance optimization
+		}
+
+		// Build query string with proper encoding
+		const queryString = this.#buildQueryString({
+			infoHash,
+			port,
+			uploadedBytes,
+			downloadedBytes,
+			leftBytes,
+			compact,
+			currentHost,
+			event,
+			noPeerId,
+			numwant,
+			key,
+		});
+
+		// Preserve any existing search params from the tracker URL
 		const url = new URL(trackerURL);
-		dns.prefetch(trackerURL.host);
-		url.searchParams.set("info_hash", percentEncodeBytes(infoHash));
-		url.searchParams.set("peer_id", encodePeerId(this.peerId));
-		url.searchParams.set("port", String(port));
-		url.searchParams.set("uploaded", String(uploadedBytes));
-		url.searchParams.set("downloaded", String(downloadedBytes));
-		url.searchParams.set("left", String(leftBytes));
-		url.searchParams.set("compact", compact ? "1" : "0");
+		url.search = queryString;
+		const urlString = url.toString();
 
-		url.searchParams.set("ip", currentHost);
-
-		if (event !== undefined) {
-			url.searchParams.set("event", event);
-		}
-
-		if (noPeerId) {
-			url.searchParams.set("no_peer_id", "1");
-		}
-
-		if (numwant !== undefined) {
-			url.searchParams.set("numwant", String(numwant));
-		}
-
-		if (key !== undefined) {
-			url.searchParams.set("key", key);
-		}
-
-		if (this._trackerId !== null) {
-			url.searchParams.set("trackerid", this._trackerId);
-		}
-
-		const response = await fetch(url, {
-			signal: AbortSignal.timeout(30_000),
-			verbose: true,
+		const response = await fetch(urlString, {
+			signal: AbortSignal.timeout(TRACKER_TIMEOUT_MS),
+			verbose,
+			headers: {
+				"User-Agent": DEFAULT_USER_AGENT,
+				Accept: "*/*",
+			},
 		});
 
 		if (!response.ok) {
+			const body = await response.text().catch(() => "Unable to read body");
 			throw new Error(
-				`Tracker request failed: ${response.status} ${response.statusText}`,
+				`Tracker request failed: ${response.status} ${response.statusText}\nBody: ${body}`,
 			);
 		}
 
@@ -112,6 +147,53 @@ export class ClientTracker {
 		}
 
 		return parsed;
+	}
+
+	/**
+	 * Build query string for announce request.
+	 * Uses manual encoding for binary fields to avoid double-encoding issues.
+	 */
+	#buildQueryString(params: {
+		infoHash: SHA1Hash;
+		port: Port;
+		uploadedBytes: number;
+		downloadedBytes: number;
+		leftBytes: number;
+		compact: boolean;
+		currentHost: IPAddr | Hostname;
+		event?: "started" | "completed" | "stopped";
+		noPeerId: boolean;
+		numwant?: number;
+		key?: string;
+	}): string {
+		const parts: string[] = [
+			`info_hash=${percentEncodeBytes(params.infoHash)}`,
+			`peer_id=${encodePeerId(this.peerId)}`,
+			`port=${params.port}`,
+			`uploaded=${params.uploadedBytes}`,
+			`downloaded=${params.downloadedBytes}`,
+			`left=${params.leftBytes}`,
+			`compact=${params.compact ? "1" : "0"}`,
+			`ip=${encodeURIComponent(params.currentHost)}`,
+		];
+
+		if (params.event) {
+			parts.push(`event=${encodeURIComponent(params.event)}`);
+		}
+		if (params.noPeerId) {
+			parts.push("no_peer_id=1");
+		}
+		if (params.numwant !== undefined) {
+			parts.push(`numwant=${params.numwant}`);
+		}
+		if (params.key) {
+			parts.push(`key=${encodeURIComponent(params.key)}`);
+		}
+		if (this._trackerId) {
+			parts.push(`trackerid=${encodeURIComponent(this._trackerId)}`);
+		}
+
+		return parts.join("&");
 	}
 
 	#parseResponse(bytes: Uint8Array, wantPeerId: boolean): TrackerResponse {
@@ -170,19 +252,19 @@ export class ClientTracker {
 		const peers: TrackerPeer[] = [];
 		let offset = 0;
 
-		while (offset + 6 <= bytes.length) {
+		while (offset + COMPACT_PEER_SIZE <= bytes.length) {
 			const ipBytes = bytes.slice(offset, offset + 4);
 			const portBytes = bytes.slice(offset + 4, offset + 6);
 			const ipStr = `${ipBytes[0]}.${ipBytes[1]}.${ipBytes[2]}.${ipBytes[3]}`;
 			if (isIPAddr(ipStr)) {
 				// biome-ignore lint/style/noNonNullAssertion: portBytes.length === 2
-				const port = (portBytes[0]! << 8) | portBytes[1]!;
+				const port = (portBytes[0]! << BITS_PER_BYTE) | portBytes[1]!;
 				if (isPort(port) && port !== 0) {
 					peers.push({ host: ipStr as IPAddr, port: port as Port });
 				}
 			}
 
-			offset += 6;
+			offset += COMPACT_PEER_SIZE;
 		}
 
 		return peers;
@@ -203,26 +285,32 @@ export class ClientTracker {
 			if (wantPeerId) {
 				const peerIdBytes = this.#optBytes(entry, "peer id");
 				if (peerIdBytes !== undefined) {
-					peerId = createPeerId(peerIdBytes);
+					try {
+						peerId = createPeerId(peerIdBytes);
+					} catch {
+						// Skip peers with invalid peer IDs
+						continue;
+					}
 				}
 			}
 
 			const ipBytes = this.#expectBytes(entry, "ip");
-			const ip = new TextDecoder().decode(ipBytes);
+			const ip = TEXT_DECODER.decode(ipBytes);
 
 			if (!isIPAddr(ip) && !isHostname(ip)) {
 				continue;
 			}
 
 			const port = this.#expectInteger(entry, "port");
-			if (!isPort(Number(port)) || port === 0n) {
+			const portNum = Number(port);
+			if (!Number.isSafeInteger(portNum) || !isPort(portNum) || portNum === 0) {
 				continue;
 			}
 
 			peers.push({
 				peerId,
 				host: ip as IPAddr | Hostname,
-				port: Number(port) as Port,
+				port: portNum as Port,
 			});
 		}
 
@@ -233,7 +321,7 @@ export class ClientTracker {
 		dict: Map<Uint8Array, BencodeDecodedValue>,
 		key: string,
 	): BencodeDecodedValue | undefined {
-		const keyBytes = new TextEncoder().encode(key);
+		const keyBytes = TEXT_ENCODER.encode(key);
 		for (const [k, v] of dict) {
 			if (
 				k.length === keyBytes.length &&
@@ -306,6 +394,6 @@ export class ClientTracker {
 		if (!(val instanceof Uint8Array)) {
 			throw new Error(`Tracker response '${key}' is not a bencoded string`);
 		}
-		return new TextDecoder().decode(val);
+		return TEXT_DECODER.decode(val);
 	}
 }
