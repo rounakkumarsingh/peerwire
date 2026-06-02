@@ -16,11 +16,107 @@ function toHostname(host: string): Hostname {
 	return host as Hostname;
 }
 
+/**
+ * URL wrapper that preserves percent-encoded values in search params.
+ * Standard URL.searchParams.get() decodes %XX sequences, which corrupts
+ * binary data like info_hash and peer_id. This wrapper provides access
+ * to both the decoded params (via searchParams) and raw values.
+ */
+class MockURL {
+	private _url: URL;
+	private _rawSearchParams: Map<string, string>;
+	searchParams: URLSearchParams;
+
+	constructor(url: string | URL) {
+		this._url = url instanceof URL ? url : new URL(url);
+		this.searchParams = this._url.searchParams;
+
+		// Parse and store raw percent-encoded values
+		this._rawSearchParams = new Map();
+		const query = this._url.search.substring(1);
+		if (query) {
+			const pairs = query.split("&");
+			for (const pair of pairs) {
+				const [key, value] = pair.split("=");
+				if (key && value !== undefined) {
+					this._rawSearchParams.set(key, value);
+				}
+			}
+		}
+	}
+
+	get href(): string {
+		return this._url.href;
+	}
+
+	get protocol(): string {
+		return this._url.protocol;
+	}
+
+	get host(): string {
+		return this._url.host;
+	}
+
+	get hostname(): string {
+		return this._url.hostname;
+	}
+
+	get port(): string {
+		return this._url.port;
+	}
+
+	get pathname(): string {
+		return this._url.pathname;
+	}
+
+	get search(): string {
+		return this._url.search;
+	}
+
+	get hash(): string {
+		return this._url.hash;
+	}
+
+	get origin(): string {
+		return this._url.origin;
+	}
+
+	get username(): string {
+		return this._url.username;
+	}
+
+	get password(): string {
+		return this._url.password;
+	}
+
+	toJSON(): string {
+		return this._url.toJSON();
+	}
+
+	/**
+	 * Get raw percent-encoded search param value without decoding.
+	 * Use this for binary data like info_hash and peer_id.
+	 */
+	getRawSearchParam(name: string): string | null {
+		return this._rawSearchParams.get(name) ?? null;
+	}
+
+	toString(): string {
+		return this._url.toString();
+	}
+}
+
 function createMockFetch(
-	fn: (url: URL) => Promise<Response>,
+	fn: (url: MockURL) => Promise<Response>,
 ): typeof globalThis.fetch {
 	return ((url: URL | Request | string) => {
-		const resolvedUrl = url instanceof URL ? url : new URL(url as string);
+		const urlStr =
+			url instanceof URL
+				? url.toString()
+				: url instanceof Request
+					? url.url
+					: url;
+		const resolvedUrl = new MockURL(urlStr);
 		return fn(resolvedUrl);
 	}) as unknown as typeof globalThis.fetch;
 }
@@ -1204,7 +1300,7 @@ describe("ClientTracker", () => {
 
 			globalThis.fetch = createMockFetch(async (resolvedUrl) => {
 				capturedInfoHashes.push(
-					resolvedUrl.searchParams.get("info_hash") ?? "",
+					resolvedUrl.getRawSearchParam("info_hash") ?? "",
 				);
 				const peers = createCompactPeers([{ ip: "192.168.1.100", port: 6881 }]);
 				return new Response(bencode({ interval: 1800n, peers }));
@@ -1307,7 +1403,7 @@ describe("ClientTracker", () => {
 			let capturedInfoHash!: string | null;
 
 			globalThis.fetch = createMockFetch(async (resolvedUrl) => {
-				capturedInfoHash = resolvedUrl.searchParams.get("info_hash");
+				capturedInfoHash = resolvedUrl.getRawSearchParam("info_hash");
 				return new Response(bencode({ interval: 1800n, peers: "" }));
 			});
 
@@ -1343,7 +1439,7 @@ describe("ClientTracker", () => {
 			let capturedInfoHash!: string | null;
 
 			globalThis.fetch = createMockFetch(async (resolvedUrl) => {
-				capturedInfoHash = resolvedUrl.searchParams.get("info_hash");
+				capturedInfoHash = resolvedUrl.getRawSearchParam("info_hash");
 				return new Response(bencode({ interval: 1800n, peers: "" }));
 			});
 
@@ -1381,7 +1477,7 @@ describe("ClientTracker", () => {
 			let capturedInfoHash!: string | null;
 
 			globalThis.fetch = createMockFetch(async (resolvedUrl) => {
-				capturedInfoHash = resolvedUrl.searchParams.get("info_hash");
+				capturedInfoHash = resolvedUrl.getRawSearchParam("info_hash");
 				return new Response(bencode({ interval: 1800n, peers: "" }));
 			});
 
@@ -1429,7 +1525,7 @@ describe("ClientTracker", () => {
 			let capturedPeerId!: string | null;
 
 			globalThis.fetch = createMockFetch(async (resolvedUrl) => {
-				capturedPeerId = resolvedUrl.searchParams.get("peer_id");
+				capturedPeerId = resolvedUrl.getRawSearchParam("peer_id");
 				return new Response(bencode({ interval: 1800n, peers: "" }));
 			});
 
@@ -1462,8 +1558,8 @@ describe("ClientTracker", () => {
 			let capturedPeerId!: string | null;
 
 			globalThis.fetch = createMockFetch(async (resolvedUrl) => {
-				capturedInfoHash = resolvedUrl.searchParams.get("info_hash");
-				capturedPeerId = resolvedUrl.searchParams.get("peer_id");
+				capturedInfoHash = resolvedUrl.getRawSearchParam("info_hash");
+				capturedPeerId = resolvedUrl.getRawSearchParam("peer_id");
 				return new Response(bencode({ interval: 1800n, peers: "" }));
 			});
 

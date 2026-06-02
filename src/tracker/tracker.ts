@@ -118,9 +118,11 @@ export class ClientTracker {
 		});
 
 		// Preserve any existing search params from the tracker URL
-		const url = new URL(trackerURL);
-		url.search = queryString;
-		const urlString = url.toString();
+		// For binary-safe encoding, we need to manually construct the URL string
+		// because URL.search decodes percent-encoded values
+		const baseUrl = trackerURL.toString();
+		const separator = baseUrl.includes("?") ? "&" : "?";
+		const urlString = baseUrl + separator + queryString;
 
 		const response = await fetch(urlString, {
 			signal: AbortSignal.timeout(TRACKER_TIMEOUT_MS),
