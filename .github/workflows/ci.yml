@@ -15,20 +15,17 @@ jobs:
             - uses: oven-sh/setup-bun@v2
             - run: bun install
             - run: bun test
-
-    biome:
-        name: Biome CI
+    format:
         runs-on: ubuntu-latest
-        permissions:
-            contents: read
         steps:
-            - name: Checkout
-              uses: actions/checkout@v4
-              with:
-                  persist-credentials: false
-            - name: Setup Biome
-              uses: biomejs/setup-biome@v2
-              with:
-                  version: latest
-            - name: Run Biome
-              run: biome ci .
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-node@v2
+            - run: bun install
+            - run: bun fmt:check
+    lint:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-node@v2
+            - run: bun install
+            - run: bun lint
