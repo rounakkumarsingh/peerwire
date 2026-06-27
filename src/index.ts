@@ -8,7 +8,7 @@ const torrentFilePath = await parseTorrentFile(
 	`${import.meta.dir}/torrent/test-data/debian-13.3.0-amd64-netinst.iso.torrent`,
 );
 console.log(torrentFilePath);
-torrentFilePath.info = torrentFilePath.info as TorrentMetadataSingleFileInfo;
+const info = torrentFilePath.info as TorrentMetadataSingleFileInfo;
 
 const x = new ClientTracker(generatePeerId());
 
@@ -17,7 +17,7 @@ const y = await x.announce({
 	downloadedBytes: 0,
 	infoHash: torrentFilePath.infoHash,
 	uploadedBytes: 0,
-	leftBytes: torrentFilePath.info.length,
+	leftBytes: info.length,
 	currentHost: "127.0.0.1" as import("./tracker/types").IPAddr,
 	port: 6881 as import("./tracker/types").Port,
 	event: "started",

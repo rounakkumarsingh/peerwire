@@ -23,7 +23,6 @@ export function generatePeerId(): PeerId {
 export function percentEncodeBytes(bytes: Uint8Array): string {
 	let result = "";
 	for (let i = 0; i < bytes.length; i++) {
-		// biome-ignore lint/style/noNonNullAssertion: i <= bytes.length
 		const byte = bytes[i]!;
 		result += `%${byte.toString(16).padStart(2, "0").toUpperCase()}`;
 	}

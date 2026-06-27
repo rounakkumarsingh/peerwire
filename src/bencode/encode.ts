@@ -37,7 +37,6 @@ export function encodeDict(dict: Map<string, BencodeEncodedValue>): Uint8Array {
 	const kvPairs: Uint8Array[] = [];
 	for (const key of sortedKeys) {
 		kvPairs.push(encodeString(key));
-		// biome-ignore lint/style/noNonNullAssertion: these keys come from `dict.keys()`
 		kvPairs.push(encodeItem(dict.get(key)!));
 	}
 	return Buffer.concat([toUint8Array("d"), ...kvPairs, toUint8Array("e")]);

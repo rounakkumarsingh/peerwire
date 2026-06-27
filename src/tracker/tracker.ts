@@ -253,7 +253,6 @@ export class ClientTracker {
 			const portBytes = bytes.slice(offset + 4, offset + 6);
 			const ipStr = `${ipBytes[0]}.${ipBytes[1]}.${ipBytes[2]}.${ipBytes[3]}`;
 			if (isIPAddr(ipStr)) {
-				// biome-ignore lint/style/noNonNullAssertion: portBytes.length === 2
 				const port = (portBytes[0]! << BITS_PER_BYTE) | portBytes[1]!;
 				if (isPort(port) && port !== 0) {
 					peers.push({ host: ipStr as IPAddr, port: port as Port });
