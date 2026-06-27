@@ -1,8 +1,5 @@
 import { dns } from "bun";
-import {
-	type BencodeDecodedValue,
-	decodeBencodedItem,
-} from "../bencode/decode";
+import { type BencodeDecodedValue, decodeBencodedItem } from "../bencode/decode";
 import type { SHA1Hash } from "../torrent/metadata";
 import {
 	createPeerId,
@@ -231,10 +228,7 @@ export class ClientTracker {
 		};
 	}
 
-	#parsePeers(
-		raw: BencodeDecodedValue | undefined,
-		wantPeerId: boolean,
-	): TrackerPeer[] {
+	#parsePeers(raw: BencodeDecodedValue | undefined, wantPeerId: boolean): TrackerPeer[] {
 		if (raw === undefined) {
 			throw new Error("Tracker response missing 'peers'");
 		}
@@ -272,10 +266,7 @@ export class ClientTracker {
 		return peers;
 	}
 
-	#parseDictionaryPeers(
-		peersList: BencodeDecodedValue[],
-		wantPeerId: boolean,
-	): TrackerPeer[] {
+	#parseDictionaryPeers(peersList: BencodeDecodedValue[], wantPeerId: boolean): TrackerPeer[] {
 		const peers: TrackerPeer[] = [];
 
 		for (const entry of peersList) {
@@ -319,26 +310,17 @@ export class ClientTracker {
 		return peers;
 	}
 
-	#get(
-		dict: Map<Uint8Array, BencodeDecodedValue>,
-		key: string,
-	): BencodeDecodedValue | undefined {
+	#get(dict: Map<Uint8Array, BencodeDecodedValue>, key: string): BencodeDecodedValue | undefined {
 		const keyBytes = TEXT_ENCODER.encode(key);
 		for (const [k, v] of dict) {
-			if (
-				k.length === keyBytes.length &&
-				k.every((b, i) => b === keyBytes[i])
-			) {
+			if (k.length === keyBytes.length && k.every((b, i) => b === keyBytes[i])) {
 				return v;
 			}
 		}
 		return undefined;
 	}
 
-	#expectInteger(
-		dict: Map<Uint8Array, BencodeDecodedValue>,
-		key: string,
-	): bigint {
+	#expectInteger(dict: Map<Uint8Array, BencodeDecodedValue>, key: string): bigint {
 		const val = this.#get(dict, key);
 		if (val === undefined) {
 			throw new Error(`Tracker response missing '${key}'`);
@@ -349,10 +331,7 @@ export class ClientTracker {
 		return val;
 	}
 
-	#optInteger(
-		dict: Map<Uint8Array, BencodeDecodedValue>,
-		key: string,
-	): bigint | undefined {
+	#optInteger(dict: Map<Uint8Array, BencodeDecodedValue>, key: string): bigint | undefined {
 		const val = this.#get(dict, key);
 		if (val === undefined) return undefined;
 		if (typeof val !== "bigint") {
@@ -361,10 +340,7 @@ export class ClientTracker {
 		return val;
 	}
 
-	#expectBytes(
-		dict: Map<Uint8Array, BencodeDecodedValue>,
-		key: string,
-	): Uint8Array {
+	#expectBytes(dict: Map<Uint8Array, BencodeDecodedValue>, key: string): Uint8Array {
 		const val = this.#get(dict, key);
 		if (val === undefined) {
 			throw new Error(`Tracker response missing '${key}'`);
@@ -375,10 +351,7 @@ export class ClientTracker {
 		return val;
 	}
 
-	#optBytes(
-		dict: Map<Uint8Array, BencodeDecodedValue>,
-		key: string,
-	): Uint8Array | undefined {
+	#optBytes(dict: Map<Uint8Array, BencodeDecodedValue>, key: string): Uint8Array | undefined {
 		const val = this.#get(dict, key);
 		if (val === undefined) return undefined;
 		if (!(val instanceof Uint8Array)) {
@@ -387,10 +360,7 @@ export class ClientTracker {
 		return val;
 	}
 
-	#optString(
-		dict: Map<Uint8Array, BencodeDecodedValue>,
-		key: string,
-	): string | undefined {
+	#optString(dict: Map<Uint8Array, BencodeDecodedValue>, key: string): string | undefined {
 		const val = this.#get(dict, key);
 		if (val === undefined) return undefined;
 		if (!(val instanceof Uint8Array)) {

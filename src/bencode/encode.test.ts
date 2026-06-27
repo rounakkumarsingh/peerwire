@@ -165,9 +165,7 @@ describe("encodeDict", () => {
 	});
 
 	test("dictionary with list value", () => {
-		const dict = new Map<string, BencodeEncodedValue>([
-			["name", ["tom", "jerr"]],
-		]);
+		const dict = new Map<string, BencodeEncodedValue>([["name", ["tom", "jerr"]]]);
 		const result = encodeDict(dict);
 		expect(new TextDecoder().decode(result)).toBe("d4:namel3:tom4:jerree");
 	});
@@ -186,9 +184,7 @@ describe("encodeDict", () => {
 			["mango", 3n],
 		]);
 		const result = encodeDict(dict);
-		expect(new TextDecoder().decode(result)).toBe(
-			"d5:applei2e5:mangoi3e5:zebrai1ee",
-		);
+		expect(new TextDecoder().decode(result)).toBe("d5:applei2e5:mangoi3e5:zebrai1ee");
 	});
 
 	test("dictionary with empty string value", () => {
@@ -290,10 +286,7 @@ describe("encoding roundtrip", () => {
 		const original: BencodeEncodedValue[] = [["nested", 1n], "test"];
 		const encoded = encodeList(original);
 		const decoded = decodeBencodedList(encoded, 0);
-		expect(decoded.value).toEqual([
-			[toUint8Array("nested"), 1n],
-			toUint8Array("test"),
-		]);
+		expect(decoded.value).toEqual([[toUint8Array("nested"), 1n], toUint8Array("test")]);
 	});
 
 	test("dict roundtrip", () => {
@@ -366,9 +359,7 @@ describe("edge cases", () => {
 	test("list with all types", () => {
 		const dict = new Map<string, BencodeEncodedValue>([["key", "value"]]);
 		const result = encodeList(["string", 42n, ["nested"], dict]);
-		expect(new TextDecoder().decode(result)).toBe(
-			"l6:stringi42el6:nesteded3:key5:valueee",
-		);
+		expect(new TextDecoder().decode(result)).toBe("l6:stringi42el6:nesteded3:key5:valueee");
 	});
 
 	test("dict with all value types", () => {

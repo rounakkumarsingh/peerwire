@@ -95,16 +95,12 @@ export function decodeBencodedInteger(
 	const numberEnd = input.indexOf(LOWERCASE_E, offset);
 	if (numberEnd <= offset + 1) {
 		// handles case where e is not available or just ie
-		throw new Error(
-			numberEnd === offset + 1 ? "expected number" : "expected 'e'",
-		);
+		throw new Error(numberEnd === offset + 1 ? "expected number" : "expected 'e'");
 	}
 	const number = parseNumber(input, offset + 1, numberEnd);
 	if (
 		(input.at(offset + 1) === ZERO && numberEnd - offset > 2) ||
-		(input.at(offset + 1) === MINUS &&
-			input.at(offset + 2) === ZERO &&
-			numberEnd - offset > 3)
+		(input.at(offset + 1) === MINUS && input.at(offset + 2) === ZERO && numberEnd - offset > 3)
 	) {
 		throw new Error("No leading zeros");
 	}
@@ -149,15 +145,9 @@ export function decodeBencodedDictionary(
 	let lastKey: Uint8Array | null = null;
 	while (currOffset < input.length && input[currOffset] !== LOWERCASE_E) {
 		// Parse key (must be a string in bencode)
-		const { value: key, nextOffset: afterKeyOffset } = decodeBencodedString(
-			input,
-			currOffset,
-		);
+		const { value: key, nextOffset: afterKeyOffset } = decodeBencodedString(input, currOffset);
 		currOffset = afterKeyOffset;
-		const { value, nextOffset: afterValueOffset } = decodeBencodedItem(
-			input,
-			currOffset,
-		);
+		const { value, nextOffset: afterValueOffset } = decodeBencodedItem(input, currOffset);
 		currOffset = afterValueOffset;
 		if (lastKey !== null && compareBytes(lastKey, key) >= 0) {
 			throw new Error("keys must be sorted");
@@ -199,9 +189,7 @@ export function decodeBencodedItem(
 				return decodeBencodedString(input, offset);
 			}
 
-			throw new Error(
-				`Invalid bencoded item at offset ${offset}: 0x${byte.toString(16)}`,
-			);
+			throw new Error(`Invalid bencoded item at offset ${offset}: 0x${byte.toString(16)}`);
 	}
 }
 

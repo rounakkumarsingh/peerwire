@@ -29,9 +29,7 @@ describe("multiple files torrent", () => {
 	test("parses Ubuntu ISO correctly", async () => {
 		const torrentPath = path.join(import.meta.dir, "./test-data/self.torrent");
 		const meta = await parseTorrentFile(torrentPath);
-		expect(meta.announce.toString()).toBe(
-			"https://github.com/rounakkumarsingh/peerwire",
-		);
+		expect(meta.announce.toString()).toBe("https://github.com/rounakkumarsingh/peerwire");
 		expect(meta.comment).toBe("this repo's torrent");
 		expect(meta.createdBy).toBe("mktorrent 1.1");
 		expect(meta.creationDate).toBe(1772644670 as UnixTimestamp);
@@ -41,19 +39,14 @@ describe("multiple files torrent", () => {
 		expect(info.name).toBe("peerwire");
 		expect(info.pieceLength).toBe(32768 as PieceData);
 		expect(info.files).toBeArrayOfSize(15);
-		expect(toHex(meta.infoHash)).toBe(
-			"645f3a89807b3b02ee4f0e6c722dad8962bb243b",
-		);
+		expect(toHex(meta.infoHash)).toBe("645f3a89807b3b02ee4f0e6c722dad8962bb243b");
 		expect(info.pieces.length).toBe(7);
 	});
 });
 
 describe("error handling", () => {
 	test("throws when file does not exist", async () => {
-		const torrentPath = path.join(
-			import.meta.dir,
-			"test-data/non-existent.torrent",
-		);
+		const torrentPath = path.join(import.meta.dir, "test-data/non-existent.torrent");
 		expect(async () => await parseTorrentFile(torrentPath)).toThrow();
 	});
 
@@ -71,12 +64,8 @@ describe("single file torrent", () => {
 		);
 		const meta = await parseTorrentFile(torrentPath);
 
-		expect(meta.announce.toString()).toBe(
-			"http://bttracker.debian.org:6969/announce",
-		);
-		expect(toHex(meta.infoHash)).toBe(
-			"86f635034839f1ebe81ab96bee4ac59f61db9dde",
-		);
+		expect(meta.announce.toString()).toBe("http://bttracker.debian.org:6969/announce");
+		expect(toHex(meta.infoHash)).toBe("86f635034839f1ebe81ab96bee4ac59f61db9dde");
 		expect(meta.creationDate).toBe(1768050335 as UnixTimestamp);
 		expect(meta.createdBy).toBe("mktorrent 1.1");
 		expect(meta.comment).toBe("Debian CD from cdimage.debian.org");
@@ -97,9 +86,7 @@ describe("single file torrent", () => {
 
 		const meta = await parseTorrentFile(torrentPath);
 
-		expect(meta.announce.href).toBe(
-			"udp://tracker.openbittorrent.com:80/announce",
-		);
+		expect(meta.announce.href).toBe("udp://tracker.openbittorrent.com:80/announce");
 
 		expect(meta.announceList).toBeArrayOfSize(2);
 
@@ -114,8 +101,6 @@ describe("single file torrent", () => {
 		expect(info.pieceLength).toBe(524288 as PieceData);
 		expect(info.length).toBeGreaterThan(0);
 		expect(meta.infoHash.length).toBe(20);
-		expect(toHex(meta.infoHash)).toBe(
-			"565db305a27ffb321fcc7b064afd7bd73aedda2b",
-		);
+		expect(toHex(meta.infoHash)).toBe("565db305a27ffb321fcc7b064afd7bd73aedda2b");
 	});
 });

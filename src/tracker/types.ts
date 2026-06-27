@@ -16,8 +16,7 @@ export function isHostname(value: string): value is Hostname {
 	const hostnameRegex =
 		/^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]))*$/;
 	return labels.every(
-		(label) =>
-			label.length >= 1 && label.length <= 63 && hostnameRegex.test(label),
+		(label) => label.length >= 1 && label.length <= 63 && hostnameRegex.test(label),
 	);
 }
 

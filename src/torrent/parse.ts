@@ -16,9 +16,7 @@ import type {
 	UnixTimestamp,
 } from "./metadata";
 
-type TypeGuard<T extends BencodeDecodedValue> = (
-	value: BencodeDecodedValue,
-) => value is T;
+type TypeGuard<T extends BencodeDecodedValue> = (value: BencodeDecodedValue) => value is T;
 
 function expectKey<T extends BencodeDecodedValue>(
 	dict: Map<Uint8Array, BencodeDecodedValue>,
@@ -101,14 +99,11 @@ function optKey<T extends BencodeDecodedValue>(
 	return value;
 }
 
-const isUint8Array = (v: BencodeDecodedValue): v is Uint8Array =>
-	v instanceof Uint8Array;
+const isUint8Array = (v: BencodeDecodedValue): v is Uint8Array => v instanceof Uint8Array;
 const isBigInt = (v: BencodeDecodedValue): v is bigint => typeof v === "bigint";
-const isMap = (
-	v: BencodeDecodedValue,
-): v is Map<Uint8Array, BencodeDecodedValue> => v instanceof Map;
-const isArray = (v: BencodeDecodedValue): v is BencodeDecodedValue[] =>
-	Array.isArray(v);
+const isMap = (v: BencodeDecodedValue): v is Map<Uint8Array, BencodeDecodedValue> =>
+	v instanceof Map;
+const isArray = (v: BencodeDecodedValue): v is BencodeDecodedValue[] => Array.isArray(v);
 
 function decodeText(bytes: Uint8Array, encoding: Encoding = "utf-8") {
 	return new TextDecoder(encoding, { fatal: true }).decode(bytes);
@@ -125,9 +120,7 @@ function parseUrlFromBytes(bytes: Uint8Array): URL {
 
 function parsePieces(pieces: Uint8Array): SHA1Hash[] {
 	if (pieces.length % 20 !== 0) {
-		throw new Error(
-			`Invalid pieces: length ${pieces.length} not divisible by 20`,
-		);
+		throw new Error(`Invalid pieces: length ${pieces.length} not divisible by 20`);
 	}
 	const hashes: SHA1Hash[] = [];
 	for (let i = 0; i < pieces.length; i += 20) {
@@ -140,16 +133,10 @@ function getInfoRange(input: Uint8Array): { start: number; end: number } {
 	let currOffset = 1; // skip 'd'
 	const LOWERCASE_E = "e".charCodeAt(0);
 	while (currOffset < input.length && input[currOffset] !== LOWERCASE_E) {
-		const { value: key, nextOffset: afterKeyOffset } = decodeBencodedString(
-			input,
-			currOffset,
-		);
+		const { value: key, nextOffset: afterKeyOffset } = decodeBencodedString(input, currOffset);
 		currOffset = afterKeyOffset;
 		const valueStart = currOffset;
-		const { nextOffset: afterValueOffset } = decodeBencodedItem(
-			input,
-			currOffset,
-		);
+		const { nextOffset: afterValueOffset } = decodeBencodedItem(input, currOffset);
 		if (decodeText(key) === "info") {
 			return { start: valueStart, end: afterValueOffset };
 		}
@@ -158,17 +145,13 @@ function getInfoRange(input: Uint8Array): { start: number; end: number } {
 	throw new Error("info key not found");
 }
 
-export async function parseTorrentFile(
-	filePath: string | URL,
-): Promise<TorrentMetadata> {
+export async function parseTorrentFile(filePath: string | URL): Promise<TorrentMetadata> {
 	const file = Bun.file(filePath);
 	const bytes = await file.bytes();
 
 	const { start, end } = getInfoRange(bytes);
 	const infoBytes = bytes.slice(start, end);
-	const infoHashBuffer = new Bun.CryptoHasher("sha1")
-		.update(infoBytes)
-		.digest();
+	const infoHashBuffer = new Bun.CryptoHasher("sha1").update(infoBytes).digest();
 	const infoHash = new Uint8Array(infoHashBuffer) as SHA1Hash;
 
 	const { value: dict } = decodeBencodedDictionary(bytes, 0);
@@ -225,9 +208,7 @@ export async function parseTorrentFile(
 				const parsedTier: TrackerURL[] = [];
 				for (const url of tier) {
 					if (!(url instanceof Uint8Array)) {
-						throw new Error(
-							"Invalid torrent: announce-list entries must be strings",
-						);
+						throw new Error("Invalid torrent: announce-list entries must be strings");
 					}
 					parsedTier.push(parseUrlFromBytes(url) as TrackerURL);
 				}
@@ -258,9 +239,7 @@ export async function parseTorrentFile(
 		const filesList: TorrentMetadataFileEntry[] = [];
 		for (const file of files) {
 			if (!isMap(file)) {
-				throw new Error(
-					"Invalid torrent: each file entry must be a bencoded dictionary",
-				);
+				throw new Error("Invalid torrent: each file entry must be a bencoded dictionary");
 			}
 			const fileLength = expectKey(file, "length", isBigInt);
 			const filePath = expectKey(file, "path", isArray).map((v) => {
@@ -311,9 +290,7 @@ export async function parseTorrentFile(
 				const parsedTier: TrackerURL[] = [];
 				for (const url of tier) {
 					if (!(url instanceof Uint8Array)) {
-						throw new Error(
-							"Invalid torrent: announce-list entries must be strings",
-						);
+						throw new Error("Invalid torrent: announce-list entries must be strings");
 					}
 					parsedTier.push(parseUrlFromBytes(url) as TrackerURL);
 				}
