@@ -1,4 +1,4 @@
-import { PeerWireCommunication } from "./peer/communication";
+import { PeerWireConnection } from "./peer/communication";
 import type { SHA1Hash, TorrentMetadataSingleFileInfo } from "./torrent/metadata";
 import { parseTorrentFile } from "./torrent/parse";
 import { ClientTracker } from "./tracker/tracker";
@@ -29,10 +29,11 @@ console.log(`\nFound ${y.peers.length} peers. Connecting to all...\n`);
 const connections = await Promise.allSettled(
 	y.peers.map(async (peer) => {
 		try {
-			const conn = await PeerWireCommunication.connect(
+			const conn = await PeerWireConnection.connect(
 				peer,
 				torrentFilePath.infoHash,
 				x.peerId as Uint8Array as SHA1Hash,
+				torrentFilePath,
 			);
 			console.log(`[${peer.host}:${peer.port}] Connected successfully`);
 			return conn;
@@ -44,7 +45,7 @@ const connections = await Promise.allSettled(
 );
 
 const successfulConnections = connections
-	.filter((r): r is PromiseFulfilledResult<PeerWireCommunication> => r.status === "fulfilled")
+	.filter((r): r is PromiseFulfilledResult<PeerWireConnection> => r.status === "fulfilled")
 	.map((r) => r.value);
 
 console.log(

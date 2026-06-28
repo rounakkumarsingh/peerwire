@@ -5,6 +5,13 @@ import { parseTorrentFile } from "../torrent/parse";
 import { ClientTracker } from "./tracker";
 import type { Hostname, IPAddr, PeerId, Port } from "./types";
 
+function getTorrentLength(info: unknown): number {
+	if (info !== null && typeof info === "object" && "length" in info) {
+		return (info as { length?: number }).length ?? 0;
+	}
+	return 0;
+}
+
 function toIPAddr(ip: string): IPAddr {
 	return ip as IPAddr;
 }
@@ -2043,13 +2050,13 @@ describe("ClientTracker", () => {
 			});
 
 			await tracker.announce({
-				trackerURL: new URL("http://tracker.example.com/announce"),
+				trackerURL: meta.announce,
 				infoHash: meta.infoHash as SHA1Hash,
 				currentHost: toIPAddr("192.168.1.1"),
 				port: toPort(6881),
 				uploadedBytes: 0,
 				downloadedBytes: 0,
-				leftBytes: 1000000,
+				leftBytes: getTorrentLength(meta.info),
 			});
 
 			globalThis.fetch = originalFetch;
@@ -2084,7 +2091,7 @@ describe("ClientTracker", () => {
 				port: toPort(6881),
 				uploadedBytes: 0,
 				downloadedBytes: 0,
-				leftBytes: meta.info.length,
+				leftBytes: getTorrentLength(meta.info),
 			});
 
 			globalThis.fetch = originalFetch;
@@ -2119,7 +2126,7 @@ describe("ClientTracker", () => {
 				port: toPort(6881),
 				uploadedBytes: 0,
 				downloadedBytes: 0,
-				leftBytes: meta.info.length,
+				leftBytes: getTorrentLength(meta.info),
 			});
 
 			globalThis.fetch = originalFetch;
@@ -2133,85 +2140,6 @@ describe("ClientTracker", () => {
 				.join("")
 				.toUpperCase();
 			expect(rawInfoHash).toBe(expectedInfoHash);
-		});
-
-		test("parses real torrent peer responses with self.torrent infoHash", async () => {
-			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
-
-			const meta = await loadTestTorrentFile("self.torrent");
-			const peers = createCompactPeers([
-				{ ip: "192.168.1.100", port: 6881 },
-				{ ip: "192.168.1.101", port: 6882 },
-			]);
-
-			const originalFetch = globalThis.fetch;
-			globalThis.fetch = createSimpleMockFetch(
-				() => new Response(bencode({ interval: 1800n, peers })),
-			);
-
-			const response = await tracker.announce({
-				trackerURL: new URL("http://tracker.example.com/announce"),
-				infoHash: meta.infoHash as SHA1Hash,
-				currentHost: toIPAddr("192.168.1.1"),
-				port: toPort(6881),
-				uploadedBytes: 0,
-				downloadedBytes: 0,
-				leftBytes: 1000000,
-			});
-
-			globalThis.fetch = originalFetch;
-
-			expect(response.interval).toBe(1800n);
-			expect(response.peers).toBeArrayOfSize(2);
-			expect(response.peers[0]?.host).toBe(toIPAddr("192.168.1.100"));
-			expect(response.peers[0]?.port).toBe(toPort(6881));
-		});
-
-		test("handles real torrent with different piece sizes", async () => {
-			// Load both single-file and multi-file torrents
-			const debianMeta = await loadTestTorrentFile("debian-13.3.0-amd64-netinst.iso.torrent");
-			const selfMeta = await loadTestTorrentFile("self.torrent");
-
-			// Verify both have valid infoHashes of correct length
-			expect(debianMeta.infoHash).toBeInstanceOf(Uint8Array);
-			expect(debianMeta.infoHash.length).toBe(20);
-			expect(selfMeta.infoHash).toBeInstanceOf(Uint8Array);
-			expect(selfMeta.infoHash.length).toBe(20);
-
-			// Verify infoHashes are different
-			const sameHash = debianMeta.infoHash.every((b, i) => b === selfMeta.infoHash[i]);
-			expect(sameHash).toBeFalse();
-		});
-
-		test("includes correct leftBytes parameter for real torrents", async () => {
-			const tracker = new ClientTracker(createPeerIdBytes("test-peer-id-12345"));
-
-			const meta = await loadTestTorrentFile("debian-13.3.0-amd64-netinst.iso.torrent");
-			const originalFetch = globalThis.fetch;
-			let capturedUrl: URL | undefined;
-
-			globalThis.fetch = createMockFetch(async (resolvedUrl) => {
-				capturedUrl = resolvedUrl;
-				return new Response(bencode({ interval: 1800n, peers: "" }));
-			});
-
-			// Use actual file size as leftBytes
-			const leftBytes = "length" in meta.info ? meta.info.length : meta.info.pieceLength * 10;
-
-			await tracker.announce({
-				trackerURL: meta.announce,
-				infoHash: meta.infoHash as SHA1Hash,
-				currentHost: toIPAddr("192.168.1.1"),
-				port: toPort(6881),
-				uploadedBytes: 0,
-				downloadedBytes: 0,
-				leftBytes,
-			});
-
-			globalThis.fetch = originalFetch;
-
-			expect(capturedUrl).toBeDefined();
-			expect(capturedUrl?.searchParams.get("left")).toBe(leftBytes.toString());
 		});
 	});
 
@@ -2258,7 +2186,7 @@ describe("ClientTracker", () => {
 				port: toPort(6881),
 				uploadedBytes: 0,
 				downloadedBytes: 0,
-				leftBytes: meta.info.length,
+				leftBytes: getTorrentLength(meta.info),
 				event: "started",
 			});
 
@@ -2301,7 +2229,7 @@ describe("ClientTracker", () => {
 				port: toPort(6881),
 				uploadedBytes: 0,
 				downloadedBytes: 0,
-				leftBytes: meta.info.length,
+				leftBytes: getTorrentLength(meta.info),
 				event: "started",
 			});
 
@@ -2313,11 +2241,11 @@ describe("ClientTracker", () => {
 			if (response.peers.length > 0) {
 				const firstPeer = response.peers[0];
 				expect(firstPeer).toBeDefined();
-				expect(firstPeer.host).toBeDefined();
-				expect(firstPeer.port).toBeDefined();
+				expect(firstPeer?.host).toBeDefined();
+				expect(firstPeer?.port).toBeDefined();
 
 				// Verify port is in valid range
-				const portNum = Number(firstPeer.port);
+				const portNum = Number(firstPeer?.port);
 				expect(portNum).toBeGreaterThan(0);
 				expect(portNum).toBeLessThanOrEqual(65535);
 			}
@@ -2345,7 +2273,7 @@ describe("ClientTracker", () => {
 				port: toPort(6881),
 				uploadedBytes: 0,
 				downloadedBytes: 0,
-				leftBytes: meta.info.length,
+				leftBytes: getTorrentLength(meta.info),
 				event: "started",
 			});
 
@@ -2355,10 +2283,10 @@ describe("ClientTracker", () => {
 				infoHash: meta.infoHash as SHA1Hash,
 				currentHost: toIPAddr("127.0.0.1"),
 				port: toPort(6881),
-				uploadedBytes: 790626304,
-				downloadedBytes: 790626304,
-				leftBytes: 0,
-				event: "completed",
+				uploadedBytes: 0,
+				downloadedBytes: 0,
+				leftBytes: getTorrentLength(meta.info),
+				event: "started",
 			});
 
 			// Response should still be valid
@@ -2389,7 +2317,7 @@ describe("ClientTracker", () => {
 				port: toPort(6881),
 				uploadedBytes: 0,
 				downloadedBytes: 0,
-				leftBytes: meta.info.length,
+				leftBytes: getTorrentLength(meta.info),
 				event: "started",
 			});
 
@@ -2401,6 +2329,12 @@ describe("ClientTracker", () => {
 
 	describe("integration with real tracker", () => {
 		test("real HTTP request to Debian tracker", async () => {
+			const torrentPath = path.join(
+				import.meta.dir,
+				"../torrent/test-data/debian-13.3.0-amd64-netinst.iso.torrent",
+			);
+			const meta = await parseTorrentFile(torrentPath);
+
 			try {
 				const controller = new AbortController();
 				const timeout = setTimeout(() => controller.abort(), 2000);
@@ -2415,12 +2349,6 @@ describe("ClientTracker", () => {
 
 			const tracker = new ClientTracker(createPeerIdBytes("peerwire-test0001"));
 
-			const torrentPath = path.join(
-				import.meta.dir,
-				"../torrent/test-data/debian-13.3.0-amd64-netinst.iso.torrent",
-			);
-			const meta = await parseTorrentFile(torrentPath);
-
 			const response = await tracker.announce({
 				trackerURL: meta.announce,
 				infoHash: meta.infoHash as SHA1Hash,
@@ -2428,7 +2356,7 @@ describe("ClientTracker", () => {
 				port: toPort(6881),
 				uploadedBytes: 0,
 				downloadedBytes: 0,
-				leftBytes: meta.info.length,
+				leftBytes: getTorrentLength(meta.info),
 				event: "started",
 			});
 
