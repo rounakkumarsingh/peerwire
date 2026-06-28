@@ -89,7 +89,7 @@ export class ClientTracker {
 
 		// Validate port before making request
 		if (!isPort(port)) {
-			throw new Error(`Invalid port: ${port}`);
+			throw new Error(`Invalid port: ${port as number}`);
 		}
 
 		// Prefetch DNS for faster connection
@@ -255,7 +255,7 @@ export class ClientTracker {
 			if (isIPAddr(ipStr)) {
 				const port = (portBytes[0]! << BITS_PER_BYTE) | portBytes[1]!;
 				if (isPort(port) && port !== 0) {
-					peers.push({ host: ipStr as IPAddr, port: port as Port });
+					peers.push({ host: ipStr, port: port });
 				}
 			}
 
@@ -301,8 +301,8 @@ export class ClientTracker {
 
 			peers.push({
 				peerId,
-				host: ip as IPAddr | Hostname,
-				port: portNum as Port,
+				host: ip,
+				port: portNum,
 			});
 		}
 

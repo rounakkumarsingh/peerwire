@@ -157,7 +157,7 @@ export function parsePeerMessage(data: Uint8Array): PeerMessage {
 			throw new Error(`Invalid keep-alive message: expected length 0 but got ${length}`);
 		}
 		default: {
-			throw new Error(`Unknown message type: ${messageType}`);
+			throw new Error(`Unknown message type: ${messageType as number}`);
 		}
 	}
 }
