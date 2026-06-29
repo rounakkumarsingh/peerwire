@@ -1,6 +1,7 @@
 import type { SHA1Hash, TorrentMetadata } from "../torrent/metadata";
 import type { TrackerPeer } from "../tracker/types";
 import { toUint8Array } from "../utils/toUint8Array";
+import { parsePeerMessage, PeerMessageType, type PeerMessage } from "./messages";
 
 type PeerWireSocketData = { peerWire?: PeerWireConnection };
 
@@ -93,6 +94,39 @@ class ReadBuffer {
 	}
 
 	/**
+	 * Peeks at the first n bytes from the buffer without removing them.
+	 *
+	 * This method reads up to n bytes from the head of the buffer without
+	 * modifying the buffer state. If the data wraps around the end of the
+	 * underlying array, it is seamlessly reassembled into a contiguous Uint8Array.
+	 *
+	 * @param n - The number of bytes to peek from the buffer
+	 * @returns A new Uint8Array containing the peeked bytes
+	 * @throws Error if n exceeds the available data in the buffer
+	 */
+	peek(n: number): Uint8Array {
+		if (n > this.size) {
+			throw new Error("Not enough data in buffer to peek");
+		}
+		const result = new Uint8Array(n);
+		let bytesRead = 0;
+		let headPos = this.head;
+		const capacity = this.buffer.length;
+
+		while (bytesRead < n) {
+			const bytesToEnd = capacity - headPos;
+			const toRead = Math.min(n - bytesRead, bytesToEnd);
+
+			result.set(this.buffer.subarray(headPos, headPos + toRead), bytesRead);
+
+			headPos = (headPos + toRead) % capacity;
+			bytesRead += toRead;
+		}
+
+		return result;
+	}
+
+	/**
 	 * Removes and returns the first n bytes from the buffer.
 	 *
 	 * This method reads up to n bytes from the head of the buffer, removing them
@@ -133,28 +167,36 @@ export class PeerWireConnection {
 	readonly peerId: SHA1Hash;
 	readonly torrentMetadata: TorrentMetadata;
 	readonly state = {
-		amChoked: true,
-		amInterested: false,
-		peerChoked: true,
-		peerInterested: false,
+		isChokedByPeer: true,
+		isInterestedInPeer: false,
+		hasChokedPeer: true,
+		isPeerInterestedInUs: false,
 	};
 	public socket: Bun.Socket<PeerWireSocketData>;
+	private peerBitfield: Uint8Array;
 
 	private readBuffer: ReadBuffer = new ReadBuffer();
 
+	readonly handlePiece: (pieceIndex: number, pieceOffset: number, pieceData: Uint8Array) => void;
+	readonly handleCancel: (pieceIndex: number, pieceOffset: number, pieceLength: number) => void;
 	private constructor(
 		peer: TrackerPeer,
 		infoHash: SHA1Hash,
 		peerId: SHA1Hash,
 		socket: Bun.Socket<PeerWireSocketData>,
 		torrentMetadata: TorrentMetadata,
+		handlePiece: (pieceIndex: number, pieceOffset: number, pieceData: Uint8Array) => void,
+		handleCancel: (pieceIndex: number, pieceOffset: number, pieceLength: number) => void,
 	) {
 		this.peer = peer;
 		this.infoHash = infoHash;
 		this.peerId = peerId;
 		this.socket = socket;
 		this.torrentMetadata = torrentMetadata;
+		this.peerBitfield = new Uint8Array(torrentMetadata.info.pieces.length);
 		this.readBuffer = new ReadBuffer();
+		this.handlePiece = handlePiece;
+		this.handleCancel = handleCancel;
 	}
 
 	private static buildHandshake(infoHash: SHA1Hash, peerId: SHA1Hash): Buffer {
@@ -233,9 +275,7 @@ export class PeerWireConnection {
 						return; // Wait for more data to arrive
 					}
 					processHandshake(instance);
-					// TODO: Send proper bitfield message with length prefix and message ID (5)
-					// Format: [4-byte length prefix][1-byte ID (5)][bitfield payload]
-					socket.reload({ socket: instance.createBitfieldHandler() });
+					socket.reload({ socket: instance.createMessageHandler() });
 				} catch (error) {
 					console.error(
 						"[Handshake Handler] Handshake failed:",
@@ -247,27 +287,69 @@ export class PeerWireConnection {
 		};
 	}
 
-	private createBitfieldHandler() {
-		return {
-			data(socket: Bun.Socket<PeerWireSocketData>, data: Uint8Array) {
-				const instance = socket.data.peerWire;
-				if (instance === undefined) {
-					throw new Error("PeerWireCommunication instance not found in socket data");
+	private processMessage(message: PeerMessage): void {
+		// TODO: Implement message processing logic based on message type
+		debug("[Message Handler] Processing message:", message);
+		switch (message.type) {
+			case PeerMessageType.Choke:
+				this.state.isChokedByPeer = true;
+				break;
+			case PeerMessageType.Unchoke:
+				this.state.isChokedByPeer = false;
+				break;
+
+			case PeerMessageType.Interested:
+				this.state.isPeerInterestedInUs = true;
+				break;
+
+			case PeerMessageType.NotInterested:
+				this.state.isPeerInterestedInUs = false;
+				break;
+
+			case PeerMessageType.Have:
+				this.peerBitfield[message.index] = 1;
+				break;
+			case PeerMessageType.Bitfield:
+				this.peerBitfield = message.bitfield;
+				break;
+			case PeerMessageType.Request:
+				if (!(this.state.isPeerInterestedInUs && !this.state.hasChokedPeer)) {
+					debug("[Message Handler] Peer not interested or choked, ignoring request");
 				}
-				// TODO: Implement bitfield handling logic
-				// 1. Append data to buffer
-				instance.readBuffer.append(data);
-				// 2. Parse bitfield message (length prefix + message ID + bitfield payload)
-
-				// 3. Store peer's bitfield
-				// 4. Send our bitfield
-				// 5. Transition to message handler
-				debug("[Bitfield Handler] Received data, length:", data.length);
-
-				// Transition to message handler when bitfield exchange complete
-				socket.reload({ socket: instance.createMessageHandler() });
-			},
-		};
+				debug(
+					"[Message Handler] Request for piece",
+					message.index,
+					"with length",
+					message.length,
+				);
+				break;
+			case PeerMessageType.Piece: {
+				if (!(this.state.isPeerInterestedInUs && !this.state.hasChokedPeer)) {
+					debug("[Message Handler] Peer not interested or choked, ignoring piece");
+				}
+				const pieceIndex = message.index;
+				const pieceOffset = message.begin;
+				const pieceData = message.block;
+				this.handlePiece(pieceIndex, pieceOffset, pieceData);
+				break;
+			}
+			case PeerMessageType.Cancel: {
+				if (!(this.state.isPeerInterestedInUs && !this.state.hasChokedPeer)) {
+					debug("[Message Handler] Peer not interested or choked, ignoring piece");
+				}
+				const pieceIndex = message.index;
+				const pieceOffset = message.begin;
+				const pieceLength = message.length;
+				this.handleCancel(pieceIndex, pieceOffset, pieceLength);
+				break;
+			}
+			case PeerMessageType.Port: {
+				throw new Error("Not implemented yet: PeerMessageType.Port case");
+			}
+			case PeerMessageType.KeepAlive: {
+				debug("[Message Handler] Received keep-alive message");
+			}
+		}
 	}
 
 	private createMessageHandler() {
@@ -277,20 +359,49 @@ export class PeerWireConnection {
 				if (instance === undefined) {
 					throw new Error("PeerWireCommunication instance not found in socket data");
 				}
-				// TODO: Implement message handling logic
-				// 1. Append data to buffer
-				// 2. Parse message length prefix
-				// 3. Handle different message types:
-				//    - 0: choke
-				//    - 1: unchoke
-				//    - 2: interested
-				//    - 3: not interested
-				//    - 4: have
-				//    - 5: bitfield
-				//    - 6: request
-				//    - 7: piece
-				//    - 8: cancel
+
+				// Append incoming data to the read buffer
+				instance.readBuffer.append(data);
 				debug("[Message Handler] Received data, length:", data.length);
+
+				// Process messages while we have enough data
+				// Need at least 4 bytes to read the length prefix
+				if (instance.readBuffer.length() < 4) {
+					return; // Wait for more data
+				}
+
+				// Peek at the length prefix without draining
+				const lengthPrefix = instance.readBuffer.peek(4);
+				const messageLength = new DataView(
+					lengthPrefix.buffer,
+					lengthPrefix.byteOffset,
+					4,
+				).getUint32(0, false);
+
+				// Check if we have enough data for the complete message
+				// Message = 4 bytes length prefix + messageLength bytes payload
+				const totalMessageSize = 4 + messageLength;
+				if (instance.readBuffer.length() < totalMessageSize) {
+					return; // Wait for more data
+				}
+
+				// Drain the complete message (length prefix + payload)
+				const messageBytes = instance.readBuffer.drain(totalMessageSize);
+
+				try {
+					// Parse the message using parsePeerMessage
+					const parsedMessage = parsePeerMessage(messageBytes);
+
+					// Process the parsed message
+					instance.processMessage(parsedMessage);
+				} catch (error) {
+					console.error(
+						"[Message Handler] Failed to parse message:",
+						error instanceof Error ? error.message : error,
+					);
+					socket.end();
+					return;
+				}
 			},
 		};
 	}
@@ -321,7 +432,15 @@ export class PeerWireConnection {
 			},
 		});
 
-		const instance = new PeerWireConnection(peer, infoHash, peerId, socket, torrentMetadata);
+		const instance = new PeerWireConnection(
+			peer,
+			infoHash,
+			peerId,
+			socket,
+			torrentMetadata,
+			() => {},
+			() => {},
+		);
 		instance.socket.data = { peerWire: instance };
 		return instance;
 	}
