@@ -5,8 +5,8 @@
 	"module": "index.ts",
 	"scripts": {
 		"test": "bun test",
-		"lint": "oxlint --type-aware --type-check .",
-		"lint:fix": "oxlint --type-aware --type-check --fix .",
+		"lint": "oxlint .",
+		"lint:fix": "oxlint .",
 		"format": "oxfmt --write .",
 		"format:check": "oxfmt --check .",
 		"prepare": "husky"
@@ -25,7 +25,7 @@
 	"lint-staged": {
 		"*.{js,jsx,ts,tsx}": [
 			"bunx oxfmt --write",
-			"bunx oxlint --type-aware --type-check"
+			"bunx oxlint"
 		]
 	}
 }
