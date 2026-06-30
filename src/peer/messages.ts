@@ -112,7 +112,7 @@ export function parsePeerMessage(data: Uint8Array): PeerMessage {
 
 		case PeerMessageType.Piece: {
 			if (length < 9) {
-				throw new Error(`Invalid request message: expected length >= 9 but got ${length}`);
+				throw new Error(`Invalid piece message: expected length >= 9 but got ${length}`);
 			}
 
 			const index = new DataView(data.buffer, data.byteOffset + 5, 4).getUint32(0, false);
@@ -224,10 +224,10 @@ export function createPeerMessage(peerMessage: PeerMessage): Uint8Array {
 			const view = new DataView(buffer);
 			const bytes = new Uint8Array(buffer);
 
-			view.setInt32(0, length);
-			view.setInt8(4, peerMessage.type);
-			view.setInt32(5, peerMessage.index);
-			view.setInt32(9, peerMessage.begin);
+			view.setUint32(0, length, false);
+			view.setUint8(4, peerMessage.type);
+			view.setUint32(5, peerMessage.index, false);
+			view.setUint32(9, peerMessage.begin, false);
 			bytes.set(peerMessage.block, 13);
 
 			return bytes;
