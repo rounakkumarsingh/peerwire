@@ -70,6 +70,7 @@ export class Piece {
 		}
 		if (this.isComplete()) {
 			console.log("Download completed");
+			this.status = PieceStatus.Complete;
 		}
 	}
 
@@ -93,7 +94,6 @@ export class Piece {
 	 */
 	isComplete(): boolean {
 		if (this.blocks.every((v) => v.status === "received")) {
-			this.status = PieceStatus.Complete;
 			return true;
 		}
 		return false;
