@@ -68,6 +68,24 @@ export class Piece {
 			block.data = data;
 			block.status = "received";
 		}
+		if (this.isComplete()) {
+			console.log("Download completed");
+		}
+	}
+
+	markBlockRequested(blockIndex: number): void {
+		if (this.status === PieceStatus.Missing) this.status = PieceStatus.Requested;
+		if (this.blocks[blockIndex] === undefined) {
+			throw new Error("Block index out of bounds");
+		}
+		this.blocks[blockIndex].status = "requested" as const;
+	}
+
+	resetBlockRequest(blockIndex: number) {
+		if (this.blocks[blockIndex] === undefined) {
+			throw new Error("Block index out of bounds");
+		}
+		this.blocks[blockIndex].status = "missing" as const;
 	}
 
 	/**
