@@ -1,1 +1,21 @@
-bun test
+set --
+
+while IFS= read -r test_file; do
+	if [ -n "$test_file" ]; then
+		set -- "$@" "$test_file"
+	fi
+done <<EOF
+$(git ls-files -- \
+	"*.test.ts" \
+	"*.test.tsx" \
+	"*.spec.ts" \
+	"*.spec.tsx" \
+	"*.test.js" \
+	"*.test.jsx" \
+	"*.spec.js" \
+	"*.spec.jsx")
+EOF
+
+if [ "$#" -gt 0 ]; then
+	bun test "$@"
+fi
