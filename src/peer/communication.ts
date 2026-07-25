@@ -377,7 +377,7 @@ export class PeerWireConnection {
 				);
 				break;
 			case PeerMessageType.Piece: {
-				if (!(this.state.isPeerInterestedInUs && !this.state.hasChokedPeer)) {
+				if (!(!this.state.isChokedByPeer && this.state.isInterestedInPeer)) {
 					debug("[Message Handler] Peer not interested or choked, ignoring piece");
 					return;
 				}
