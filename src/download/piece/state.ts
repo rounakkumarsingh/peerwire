@@ -59,44 +59,66 @@ export class Piece {
 	 * and `Downloading` → `Complete` when all blocks are received.
 	 */
 	addBlock(offset: number, data: Uint8Array): void {
-		if (this.status === PieceStatus.Missing) this.status = PieceStatus.Downloading;
+		if (this.status === PieceStatus.Complete || this.status === PieceStatus.Verified) return;
+
 		const firstBlock = this.blocks[0];
 		if (!firstBlock) return;
+
 		const blockIndex = Math.floor(offset / firstBlock.length);
 		const block = this.blocks[blockIndex];
-		if (block?.status === "missing") {
-			block.data = data;
-			block.status = "received";
+		if (!block || block.status === "received") return;
+		if (data.length !== block.length) return;
+
+		block.data = data;
+		block.status = "received";
+
+		if (this.status === PieceStatus.Missing || this.status === PieceStatus.Requested) {
+			this.status = PieceStatus.Downloading;
 		}
+
 		if (this.isComplete()) {
-			console.log("Download completed");
 			this.status = PieceStatus.Complete;
 		}
 	}
 
 	markBlockRequested(blockIndex: number): void {
-		if (this.status === PieceStatus.Missing) this.status = PieceStatus.Requested;
+		if (this.status === PieceStatus.Verified || this.status === PieceStatus.Complete) {
+			throw new Error("Piece already finished.");
+		}
 		if (this.blocks[blockIndex] === undefined) {
 			throw new Error("Block index out of bounds");
 		}
-		this.blocks[blockIndex].status = "requested" as const;
+		const block = this.blocks[blockIndex];
+		if (block.status !== "missing") return;
+
+		block.status = "requested";
+		if (this.status === PieceStatus.Missing) {
+			this.status = PieceStatus.Requested;
+		}
 	}
 
-	resetBlockRequest(blockIndex: number) {
+	resetBlockRequest(blockIndex: number): void {
 		if (this.blocks[blockIndex] === undefined) {
 			throw new Error("Block index out of bounds");
 		}
-		this.blocks[blockIndex].status = "missing" as const;
+		const block = this.blocks[blockIndex];
+		if (block.status !== "requested") return;
+
+		block.status = "missing";
+
+		if (
+			this.status === PieceStatus.Requested &&
+			!this.blocks.some((b) => b.status === "requested")
+		) {
+			this.status = PieceStatus.Missing;
+		}
 	}
 
 	/**
 	 * Returns `true` when every block has `status === "received"`.
 	 */
 	isComplete(): boolean {
-		if (this.blocks.every((v) => v.status === "received")) {
-			return true;
-		}
-		return false;
+		return this.blocks.every((v) => v.status === "received");
 	}
 
 	/**
@@ -108,6 +130,11 @@ export class Piece {
 	 */
 
 	verify(): boolean {
+		if (this.status === PieceStatus.Verified) {
+			console.log("Piece already verified.");
+			return true;
+		}
+
 		if (this.status !== PieceStatus.Complete) {
 			console.log("Verification attempted before downloading was completed.");
 			return false;
