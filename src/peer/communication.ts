@@ -319,7 +319,9 @@ export class PeerWireConnection {
 						return; // Wait for more data to arrive
 					}
 					processHandshake(instance);
-					socket.reload({ socket: instance.createMessageHandler() });
+					const messageHandler = instance.createMessageHandler();
+					socket.reload({ socket: messageHandler });
+					messageHandler.data(socket, new Uint8Array());
 				} catch (error) {
 					const err =
 						error instanceof Error ? error : new Error("Unknown handshake error");
@@ -399,7 +401,8 @@ export class PeerWireConnection {
 				break;
 			}
 			case PeerMessageType.Port: {
-				throw new Error("Not implemented yet: PeerMessageType.Port case");
+				debug(`[Message Handler] Received DHT port ${message.port}`);
+				break;
 			}
 			case PeerMessageType.KeepAlive: {
 				debug("[Message Handler] Received keep-alive message");
@@ -482,12 +485,23 @@ export class PeerWireConnection {
 		handlePiece: PeerPieceHandler = () => {},
 		handleCancel: PeerCancelHandler = () => {},
 	): Promise<PeerWireConnection> {
-		const socket = await Bun.connect<PeerWireSocketData>({
+		let instance: PeerWireConnection | undefined;
+		await Bun.connect<PeerWireSocketData>({
 			hostname: peer.host,
 			port: peer.port,
 			socket: {
 				binaryType: "uint8array",
 				open: (socket) => {
+					instance = new PeerWireConnection(
+						peer,
+						infoHash,
+						peerId,
+						socket,
+						torrentMetadata,
+						handlePiece,
+						handleCancel,
+					);
+					socket.data = { peerWire: instance };
 					socket.write(PeerWireConnection.buildHandshake(infoHash, peerId));
 					debug(`Handshake Initiated with peer ${peer.host}:${peer.port}`);
 				},
@@ -521,16 +535,10 @@ export class PeerWireConnection {
 			},
 		});
 
-		const instance = new PeerWireConnection(
-			peer,
-			infoHash,
-			peerId,
-			socket,
-			torrentMetadata,
-			handlePiece,
-			handleCancel,
-		);
-		instance.socket.data = { peerWire: instance };
+		if (instance === undefined) {
+			throw new Error("Socket connected without opening");
+		}
+
 		return instance;
 	}
 

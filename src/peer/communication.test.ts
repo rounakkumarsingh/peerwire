@@ -168,6 +168,21 @@ function makeSocket(writes: Uint8Array[] = []): MockSocket {
 	};
 }
 
+function openMockSocket(options: ConnectOptions, socket: MockSocket): Promise<MockSocket> {
+	options.socket.open(socket);
+	return Promise.resolve(socket);
+}
+
+function buildHandshake(infoHash: SHA1Hash, peerId: SHA1Hash): Uint8Array {
+	return bytes([
+		19,
+		...Array.from(new TextEncoder().encode(BT_PROTOCOL_STRING)),
+		...new Uint8Array(8),
+		...infoHash,
+		...peerId,
+	]);
+}
+
 /**
  * Instantiates a PeerWireConnection using mock dependencies for logic testing.
  */
@@ -326,7 +341,7 @@ describe("PeerWireConnection", () => {
 			let connectOptions: ConnectOptions | undefined;
 			const connectMock = mock((options: ConnectOptions) => {
 				connectOptions = options;
-				return Promise.resolve(mockSocket);
+				return openMockSocket(options, mockSocket);
 			});
 
 			(Bun as unknown as { connect: typeof connectMock }).connect = connectMock;
@@ -351,7 +366,6 @@ describe("PeerWireConnection", () => {
 				expect(typeof connectOptions?.socket.data).toBe("function");
 				expect(mockSocket.data.peerWire).toBe(connected);
 
-				connectOptions?.socket.open(mockSocket);
 				expectWritten(writes, connected.handshakePacket());
 			} finally {
 				(Bun as unknown as { connect: typeof originalConnect }).connect = originalConnect;
@@ -364,7 +378,7 @@ describe("PeerWireConnection", () => {
 			let connectOptions: ConnectOptions | undefined;
 			const connectMock = mock((options: ConnectOptions) => {
 				connectOptions = options;
-				return Promise.resolve(mockSocket);
+				return openMockSocket(options, mockSocket);
 			});
 
 			(Bun as unknown as { connect: typeof connectMock }).connect = connectMock;
@@ -381,6 +395,40 @@ describe("PeerWireConnection", () => {
 
 				expect(mockSocket.reload).toHaveBeenCalledTimes(1);
 				expect(mockSocket.end).not.toHaveBeenCalled();
+			} finally {
+				(Bun as unknown as { connect: typeof originalConnect }).connect = originalConnect;
+			}
+		});
+
+		test("connect handles a handshake received during socket open", async () => {
+			const originalConnect = Bun.connect;
+			const mockSocket = makeSocket(writes);
+			const metadata = makeMetadata();
+			const peerId = makeHash(135);
+			const connectMock = mock((options: ConnectOptions) => {
+				options.socket.open(mockSocket);
+				options.socket.data(
+					mockSocket,
+					concatBytes(
+						buildHandshake(metadata.infoHash, peerId),
+						buildMessage(PeerMessageType.Unchoke),
+					),
+				);
+				return Promise.resolve(mockSocket);
+			});
+
+			(Bun as unknown as { connect: typeof connectMock }).connect = connectMock;
+			try {
+				const connected = await PeerWireConnection.connect(
+					makePeer(),
+					metadata.infoHash,
+					peerId,
+					metadata,
+				);
+
+				expect(mockSocket.reload).toHaveBeenCalledTimes(1);
+				expect(mockSocket.end).not.toHaveBeenCalled();
+				expect(connected.state.isChokedByPeer).toBe(false);
 			} finally {
 				(Bun as unknown as { connect: typeof originalConnect }).connect = originalConnect;
 			}
@@ -418,7 +466,7 @@ describe("PeerWireConnection", () => {
 			const handlePiece = mock(() => {});
 			const handleCancel = mock(() => {});
 			const connectMock = mock((_options: ConnectOptions) => {
-				return Promise.resolve(mockSocket);
+				return openMockSocket(_options, mockSocket);
 			});
 
 			(Bun as unknown as { connect: typeof connectMock }).connect = connectMock;
@@ -462,7 +510,7 @@ describe("PeerWireConnection", () => {
 			let connectOptions: ConnectOptions | undefined;
 			const connectMock = mock((options: ConnectOptions) => {
 				connectOptions = options;
-				return Promise.resolve(mockSocket);
+				return openMockSocket(options, mockSocket);
 			});
 
 			(Bun as unknown as { connect: typeof connectMock }).connect = connectMock;
@@ -494,7 +542,7 @@ describe("PeerWireConnection", () => {
 			let connectOptions: ConnectOptions | undefined;
 			const connectMock = mock((options: ConnectOptions) => {
 				connectOptions = options;
-				return Promise.resolve(mockSocket);
+				return openMockSocket(options, mockSocket);
 			});
 
 			(Bun as unknown as { connect: typeof connectMock }).connect = connectMock;
@@ -525,7 +573,7 @@ describe("PeerWireConnection", () => {
 			let connectOptions: ConnectOptions | undefined;
 			const connectMock = mock((options: ConnectOptions) => {
 				connectOptions = options;
-				return Promise.resolve(mockSocket);
+				return openMockSocket(options, mockSocket);
 			});
 
 			(Bun as unknown as { connect: typeof connectMock }).connect = connectMock;
@@ -847,10 +895,10 @@ describe("PeerWireConnection", () => {
 			expect(socket.end).toHaveBeenCalledTimes(1);
 		});
 
-		test("port message throws unimplemented error and closes socket", () => {
+		test("port messages are ignored without closing the socket", () => {
 			feedMessage(connection, buildMessage(PeerMessageType.Port, uint16Bytes(6881)));
 
-			expect(socket.end).toHaveBeenCalledTimes(1);
+			expect(socket.end).not.toHaveBeenCalled();
 		});
 
 		test("request is actually ignored when peer is choked or not interested", () => {
